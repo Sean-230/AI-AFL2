@@ -1,0 +1,11 @@
+; Halls - three wings joined by gated doors and one open archway (6,3)
+P...#....#
+.##.D.##.#
+.#..#..#..
+.#.###.#.#
+..o.....o.
+##D##.##D#
+....#.#...
+.E#.D.#.E.
+..#.#.##..
+o...#....T

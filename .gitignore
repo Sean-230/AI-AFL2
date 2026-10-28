@@ -1,0 +1,14 @@
+# virtual environment (recreate with: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)
+.venv/
+
+# Python caches
+__pycache__/
+
+# your own play history, written by game.py
+logs/
+
+# large per-move logs; regenerate with experiment.py (summaries and charts are kept)
+results/**/moves.csv
+
+# macOS
+.DS_Store

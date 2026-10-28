@@ -1,0 +1,50 @@
+{
+  "10x10/crypt": {
+    "easy": 100,
+    "easy_win": 70,
+    "normal": 88,
+    "normal_win": 43,
+    "hard": 69,
+    "hard_win": 13
+  },
+  "10x10/halls": {
+    "easy": 60,
+    "easy_win": 70,
+    "normal": 56,
+    "normal_win": 63,
+    "hard": 54,
+    "hard_win": 7
+  },
+  "10x10/maze": {
+    "easy": 50,
+    "easy_win": 87,
+    "normal": 48,
+    "normal_win": 37,
+    "hard": 47,
+    "hard_win": 0
+  },
+  "20x20/catacombs": {
+    "easy": 132,
+    "easy_win": 63,
+    "normal": 130,
+    "normal_win": 43,
+    "hard": 126,
+    "hard_win": 10
+  },
+  "20x20/fortress": {
+    "easy": 103,
+    "easy_win": 70,
+    "normal": 93,
+    "normal_win": 43,
+    "hard": 89,
+    "hard_win": 23
+  },
+  "20x20/labyrinth": {
+    "easy": 132,
+    "easy_win": 73,
+    "normal": 103,
+    "normal_win": 43,
+    "hard": 88,
+    "hard_win": 13
+  }
+}
