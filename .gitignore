@@ -1,14 +1,15 @@
-# virtual environment (recreate with: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)
+# virtual environment (recreate with: python -m venv .venv && .venv/bin/pip install -r requirements.txt)
 .venv/
 
 # Python caches
 __pycache__/
+**/__pycache__/
 
-# your own play history, written by game.py
-logs/
+# your own play history, written by DungeonWarden/ui/game.py
+DungeonWarden/logs/
 
-# large per-move logs; regenerate with experiment.py (summaries and charts are kept)
-results/**/moves.csv
+# large per-move logs; regenerate with Experiments/experiment.py (summaries and charts are kept)
+Experiments/results/**/moves.csv
 
 # macOS
 .DS_Store

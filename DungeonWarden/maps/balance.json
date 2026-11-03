@@ -1,0 +1,27 @@
+{
+  "catacombs": {
+    "easy": 123,
+    "easy_win": 47,
+    "normal": 120,
+    "normal_win": 30,
+    "hard": 112,
+    "hard_win": 13
+  },
+  "fortress": {
+    "easy": 124,
+    "easy_win": 50,
+    "normal": 112,
+    "normal_win": 30,
+    "hard": 63,
+    "hard_win": 13
+  },
+  "labyrinth": {
+    "easy": 143,
+    "easy_win": 40,
+    "normal": 123,
+    "normal_win": 30,
+    "hard": 62,
+    "hard_win": 13
+  }
+}
+
