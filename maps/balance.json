@@ -1,50 +1,50 @@
 {
   "10x10/crypt": {
-    "easy": 100,
-    "easy_win": 70,
-    "normal": 88,
-    "normal_win": 43,
-    "hard": 69,
-    "hard_win": 13
-  },
-  "10x10/halls": {
-    "easy": 60,
-    "easy_win": 70,
-    "normal": 56,
-    "normal_win": 63,
-    "hard": 54,
-    "hard_win": 7
-  },
-  "10x10/maze": {
-    "easy": 50,
-    "easy_win": 87,
-    "normal": 48,
+    "easy": 25,
+    "easy_win": 37,
+    "normal": 24,
     "normal_win": 37,
-    "hard": 47,
+    "hard": 15,
     "hard_win": 0
   },
+  "10x10/halls": {
+    "easy": 35,
+    "easy_win": 50,
+    "normal": 17,
+    "normal_win": 27,
+    "hard": 14,
+    "hard_win": 17
+  },
+  "10x10/maze": {
+    "easy": 33,
+    "easy_win": 40,
+    "normal": 31,
+    "normal_win": 33,
+    "hard": 28,
+    "hard_win": 13
+  },
   "20x20/catacombs": {
-    "easy": 132,
-    "easy_win": 63,
-    "normal": 130,
-    "normal_win": 43,
-    "hard": 126,
-    "hard_win": 10
+    "easy": 123,
+    "easy_win": 47,
+    "normal": 120,
+    "normal_win": 30,
+    "hard": 112,
+    "hard_win": 13
   },
   "20x20/fortress": {
-    "easy": 103,
-    "easy_win": 70,
-    "normal": 93,
-    "normal_win": 43,
-    "hard": 89,
-    "hard_win": 23
+    "easy": 124,
+    "easy_win": 50,
+    "normal": 112,
+    "normal_win": 30,
+    "hard": 63,
+    "hard_win": 13
   },
   "20x20/labyrinth": {
-    "easy": 132,
-    "easy_win": 73,
-    "normal": 103,
-    "normal_win": 43,
-    "hard": 88,
+    "easy": 143,
+    "easy_win": 40,
+    "normal": 123,
+    "normal_win": 30,
+    "hard": 62,
     "hard_win": 13
   }
 }

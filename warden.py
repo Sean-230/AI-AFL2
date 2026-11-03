@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from kb import is_valid
 from search import RouteCache, bfs_distances
 from world import (ENERGY_CAP, WAIT, Action, Cell, DungeonMap, State, apply, manhattan,
-                   neighbors, tick)
+                   neighbors)
 
 LOOKAHEAD = 3       # plies: Warden, player, Warden
 MAX_BLOCKS = 6      # blocks kept per node; + Wait + one Unlock gives b <= 8
@@ -69,33 +69,24 @@ class Warden:
 
     def candidates(self, state: State, player: Cell, belief: set[Cell]):
         """Valid actions near the predicted route, most promising first (good alpha-beta ordering)."""
-        route = self.routes.path(player, state) or [player]
+        route = self.routes.path(player, state.blocked) or [player]
         blocks = []
         for c in route[1:-1]:
             a = ("LockDoor", c) if c in self.dmap.doors else ("PlaceWall", c)
             if is_valid(self.dmap, state, a, belief, self.cap) is None:
-                blocks.append((_or_inf(self.routes.length(player, apply(state, a, self.cap))), a))
+                blocks.append((_or_inf(self.routes.length(player, apply(state, a, self.cap).blocked)), a))
         blocks.sort(key=lambda t: -t[0])
         acts = [a for _, a in blocks[:MAX_BLOCKS]] + [WAIT]
         if state.locked:
             acts.append(("UnlockDoor", max(sorted(state.locked), key=lambda d: manhattan(d, player))))
         return acts, route
 
-    def evaluate(self, state: State, player: Cell, energy_value: float = 0.0) -> float:
-        """Utility for MAX (proposal 2.1): the player's shortest route length to the treasure, by A*.
-        energy_value adds a bonus per leftover energy point; it is 0 under the proposal rules and only
-        used by the variant rules (see world.VARIANT)."""
+    def evaluate(self, state: State, player: Cell) -> float:
+        """Utility for MAX (proposal 2.1): the player's shortest route length to the treasure, by A*."""
         if player == self.dmap.treasure:
             return 0.0
-        length = self.routes.length(player, state)
-        if length is None:      # unreachable can't happen for valid actions
-            length = 999
-        return length + energy_value * state.energy
-
-    def tiebreak(self, state: State, player: Cell, after: State) -> tuple:
-        """Between actions of equal value: prefer the bigger gain right now, then more energy left,
-        so energy is never spent on a block that gains nothing."""
-        return self.evaluate(after, player), after.energy
+        length = self.routes.length(player, state.blocked)
+        return 999 if length is None else length     # unreachable can't happen for valid actions
 
 
 def _or_inf(x):
@@ -122,16 +113,13 @@ class GreedyWarden(Warden):
     def choose(self, state, belief, turns_left):
         player = self.assumed_cell(belief, state)
         acts, route = self.candidates(state, player, belief)
-        scored, best, best_key = [], WAIT, None
+        acts.sort(key=lambda a: a != WAIT)      # equal value: Wait first, so no energy is spent for nothing
+        scored = []
         for a in acts:
             self.nodes += 1
-            after = apply(state, a, self.cap)
-            v = self.evaluate(after, player)
-            scored.append((a, v, True))
-            key = (v, after.energy)
-            if best_key is None or key > best_key:
-                best, best_key = a, key
-        return Decision(best, player, route, best_key[0], scored, note="1-ply greedy")
+            scored.append((a, self.evaluate(apply(state, a, self.cap), player), True))
+        best = max(scored, key=lambda t: t[1])
+        return Decision(best[0], player, route, best[1], scored, note="1-ply greedy")
 
 
 class MinimaxWarden(Warden):
@@ -140,25 +128,21 @@ class MinimaxWarden(Warden):
     def choose(self, state, belief, turns_left):
         player = self.assumed_cell(belief, state)
         acts, route = self.candidates(state, player, belief)
-        best, best_key, scored = WAIT, (-math.inf,), []
+        acts.sort(key=lambda a: a != WAIT)      # equal value: Wait first, so no energy is spent for nothing
+        alpha, best, best_v, scored = -math.inf, WAIT, -math.inf, []
         for a in acts:
-            after = apply(state, a, self.cap)
-            alpha = best_key[0] - 1e-6   # a slightly lower window still returns ties with the best exactly
-            v = self.minimax(after, player, LOOKAHEAD - 1, alpha, math.inf, False, turns_left)
-            exact = v > alpha   # v <= alpha is only an upper bound (pruned)
-            scored.append((a, v, exact))
-            # Equal lookahead values are broken by the gain realised right now. Without this the
-            # Warden keeps postponing a wall it only "threatens" at its last, unanswered ply.
-            key = (v, *self.tiebreak(state, player, after))
-            if exact and key > best_key:
-                best, best_key = a, key
-        return Decision(best, player, route, best_key[0], scored,
-                        note=f"minimax depth {LOOKAHEAD}, alpha-beta, ties -> immediate gain")
+            v = self.minimax(apply(state, a, self.cap), player, LOOKAHEAD - 1, alpha, math.inf,
+                             False, turns_left)
+            scored.append((a, v, v > alpha))   # v <= alpha is only an upper bound (pruned)
+            if v > best_v:
+                best, best_v = a, v
+            alpha = max(alpha, v)
+        return Decision(best, player, route, best_v, scored, note=f"minimax depth {LOOKAHEAD}, alpha-beta")
 
     def minimax(self, state, player, depth, alpha, beta, maximizing, turns_left):
         self.nodes += 1
         if depth == 0 or player == self.dmap.treasure or turns_left <= 0:
-            return self.evaluate(state, player, state.rules.energy_value)
+            return self.evaluate(state, player)
         if maximizing:
             best = -math.inf
             for a in self.candidates(state, player, {player})[0]:
@@ -169,13 +153,10 @@ class MinimaxWarden(Warden):
                     break
             return best
         best = math.inf
-        moves = [*neighbors(player, self.dmap, state.blocked)]
-        if state.rules.player_can_wait or not moves:
-            moves.append(player)
-        after = tick(state)     # a turn passes: locks run down and may reopen, cooldown drops
-        moves.sort(key=lambda m: _or_inf(self.routes.length(m, after)))  # best replies first
+        moves = list(neighbors(player, self.dmap, state.blocked)) or [player]
+        moves.sort(key=lambda m: _or_inf(self.routes.length(m, state.blocked)))  # best replies first
         for m in moves:
-            best = min(best, self.minimax(after, m, depth - 1, alpha, beta, True, turns_left - 1))
+            best = min(best, self.minimax(state, m, depth - 1, alpha, beta, True, turns_left - 1))
             beta = min(beta, best)
             if alpha >= beta:
                 break

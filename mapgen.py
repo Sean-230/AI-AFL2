@@ -6,7 +6,7 @@ import random
 from types import SimpleNamespace
 
 from search import bfs_distances
-from world import DungeonMap
+from world import DungeonMap, neighbors
 
 
 def random_map(n: int, seed: int = 0, wall_p: float = 0.22) -> DungeonMap:
@@ -44,18 +44,21 @@ def random_map(n: int, seed: int = 0, wall_p: float = 0.22) -> DungeonMap:
 
 
 def dungeon_map(seed: int, n: int = 20, name: str = "dungeon", room=(3, 5), extra_links: int = 2,
-                door_p: float = 0.7, plates: int = 10, eyes: int = 4, treasure_sector=(2, 2),
-                winding: bool = False) -> DungeonMap:
-    """Rooms in a 3x3 layout joined by corridors: a random spanning tree plus `extra_links` loops,
+                door_p: float = 0.7, plates: int = 10, eyes: int = 4, treasure_sector=None,
+                winding: bool = False, parallel: int = 1, grid_n: int = 3) -> DungeonMap:
+    """Rooms in a grid_n x grid_n layout (3x3 for 20x20 maps, 2x2 for 10x10) joined by corridors: a random spanning tree plus `extra_links` loops,
     so the player always has a detour. Doors sit where corridors leave rooms, plates on corridors,
-    eyes in room centres. The player starts in the top-left room."""
+    eyes in room centres. The player starts in the top-left room. `parallel` carves that many
+    separate corridors per link and extra_links=4 links every neighbouring pair of rooms, which gives
+    the player many independent routes (see route_count)."""
     rng = random.Random(seed)
-    span = (n - 2) // 3                         # sector width; sectors are 1 wall apart
+    span = (n - (grid_n - 1)) // grid_n         # sector width; sectors are 1 wall apart
+    treasure_sector = treasure_sector or (grid_n - 1, grid_n - 1)
     origin = lambda k: k * (span + 1)
     grid = [["#"] * n for _ in range(n)]
     rooms = {}
-    for sy in range(3):
-        for sx in range(3):
+    for sy in range(grid_n):
+        for sx in range(grid_n):
             w, h = rng.randint(*room), rng.randint(*room)
             x0 = origin(sx) + rng.randint(0, span - w)
             y0 = origin(sy) + rng.randint(0, span - h)
@@ -66,7 +69,7 @@ def dungeon_map(seed: int, n: int = 20, name: str = "dungeon", room=(3, 5), extr
 
     # spanning tree by randomized DFS over the sector grid, then extra loop links
     adj = lambda s: [(s[0] + dx, s[1] + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
-                     if 0 <= s[0] + dx < 3 and 0 <= s[1] + dy < 3]
+                     if 0 <= s[0] + dx < grid_n and 0 <= s[1] + dy < grid_n]
     seen, stack, links = {(0, 0)}, [(0, 0)], set()
     while stack:
         s = stack[-1]
@@ -83,7 +86,7 @@ def dungeon_map(seed: int, n: int = 20, name: str = "dungeon", room=(3, 5), extr
 
     room_of = {c: s for s, cells in rooms.items() for c in cells}
     corridor_cells, door_spots = set(), []
-    for link in sorted(links, key=sorted):
+    for link in sorted(links, key=sorted) * parallel:
         a, b = sorted(link)
         p = rng.choice(sorted(rooms[a]))
         q = rng.choice(sorted(rooms[b]))
@@ -120,11 +123,13 @@ def dungeon_map(seed: int, n: int = 20, name: str = "dungeon", room=(3, 5), extr
         return (wall(x - 1, y) and wall(x + 1, y)) or (wall(x, y - 1) and wall(x, y + 1))
 
     doors = {c for c in door_spots if is_corridor(c) and rng.random() < door_p}
-    start = min(rooms[(0, 0)])
-    treasure = max(rooms[treasure_sector]) if treasure_sector != (1, 1) else sorted(rooms[(1, 1)])[len(rooms[(1, 1)]) // 2]
+    def centre(cells):      # a room's middle cell has 4 open neighbours, so routes can leave it 4 ways
+        xs, ys = [c[0] for c in cells], [c[1] for c in cells]
+        return (min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2
+    start, treasure = centre(rooms[(0, 0)]), centre(rooms[treasure_sector])
     free_corr = sorted(c for c in corridor_cells if c not in doors)
     plate_cells = set(rng.sample(free_corr, k=min(plates, len(free_corr))))
-    centres = [sorted(cells)[len(cells) // 2] for s, cells in sorted(rooms.items())
+    centres = [centre(cells) for s, cells in sorted(rooms.items())
                if s not in ((0, 0), treasure_sector)]
     eye_cells = set(rng.sample(centres, k=min(eyes, len(centres))))
     for ch, cells in (("D", doors), ("o", plate_cells), ("E", eye_cells)):
@@ -133,3 +138,41 @@ def dungeon_map(seed: int, n: int = 20, name: str = "dungeon", room=(3, 5), extr
     grid[start[1]][start[0]] = "P"
     grid[treasure[1]][treasure[0]] = "T"
     return DungeonMap(["".join(r) for r in grid], name)
+
+
+def route_count(dmap: DungeonMap, doors_open: bool = True) -> int:
+    """How many routes from start to treasure share no cell (vertex-disjoint paths, by max-flow).
+    Each one is an independent way round the Warden, so this is the map's route variety.
+    doors_open=False counts only door-free routes, the ones a LockDoor can never cut."""
+    from collections import deque
+    blocked = dmap.walls | (set() if doors_open else dmap.doors)
+    free = [c for c in dmap.cells if c not in blocked]
+    cap = {}                                # residual capacities of the split graph, (cell, 0=in/1=out)
+    adj = {}
+    def edge(u, v, c):
+        cap[(u, v)] = cap.get((u, v), 0) + c
+        cap.setdefault((v, u), 0)
+        adj.setdefault(u, []).append(v)
+        adj.setdefault(v, []).append(u)
+    for c in free:
+        edge((c, 0), (c, 1), 99 if c in (dmap.start, dmap.treasure) else 1)
+        for n in neighbors(c, dmap, frozenset(blocked)):
+            edge((c, 1), (n, 0), 1)
+    s, t, flow = (dmap.start, 0), (dmap.treasure, 1), 0
+    while True:
+        prev = {s: None}
+        q = deque([s])
+        while q and t not in prev:
+            u = q.popleft()
+            for v in adj.get(u, ()):
+                if v not in prev and cap[(u, v)] > 0:
+                    prev[v] = u
+                    q.append(v)
+        if t not in prev:
+            return flow
+        v = t
+        while prev[v] is not None:
+            cap[(prev[v], v)] -= 1
+            cap[(v, prev[v])] += 1
+            v = prev[v]
+        flow += 1

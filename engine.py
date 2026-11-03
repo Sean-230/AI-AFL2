@@ -1,19 +1,17 @@
 """One game of Dungeon Warden. Shared by the pygame front end and the headless simulator.
 
-Turn order: the player moves one cell (the variant also allows waiting) -> percepts -> the Warden updates B_t
--> the Warden performs one action. The player wins on reaching the treasure. Under the
-proposal rules (the default) the Warden wins once T turns have passed; under the variant rules
-there is no limit, the game runs until the player gets there and the turn count is the score.
+Turn order: the player moves one cell -> percepts -> the Warden updates B_t
+-> the Warden performs one action. The player wins on reaching the treasure, the Warden wins
+once T turns have passed (proposal 2.1).
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from kb import KnowledgeBase
 from search import astar, bfs_distances
-from world import (ENERGY_CAP, ENERGY_START, MOVES, PROPOSAL, T_DEFAULT, WAIT, Cell, DungeonMap,
-                   Percept, Rules, apply, initial_state, neighbors, preconditions, sense, tick)
+from world import (ENERGY_CAP, ENERGY_START, MOVES, T_DEFAULT, WAIT, Cell, DungeonMap, Percept,
+                   apply, initial_state, neighbors, next_turn, preconditions, sense)
 from warden import WARDENS, Decision
 
 
@@ -32,12 +30,11 @@ class TurnRecord:
 
 
 class Match:
-    def __init__(self, dmap: DungeonMap, warden: str = "W2", T: int | None = T_DEFAULT,
+    def __init__(self, dmap: DungeonMap, warden: str = "W2", T: int = T_DEFAULT,
                  energy: int = ENERGY_START, cap: int = ENERGY_CAP, seed: int = 0,
-                 check_astar: bool = False, rules: Rules = PROPOSAL):
-        self.dmap, self.cap, self.rules = dmap, cap, rules
-        self.T = T if rules.turn_limit else None
-        self.state = initial_state(dmap, min(energy, cap), rules)
+                 check_astar: bool = False):
+        self.dmap, self.cap, self.T = dmap, cap, T
+        self.state = initial_state(dmap, min(energy, cap))
         self.player = dmap.start
         self.kb = KnowledgeBase(dmap, dmap.start)
         self.warden = WARDENS[warden](dmap, cap, seed)
@@ -52,17 +49,13 @@ class Match:
             raise ValueError(f"{dmap.name}: treasure is unreachable from the start")
 
     @property
-    def turns_left(self) -> float:
-        return math.inf if self.T is None else self.T - self.state.turn
+    def turns_left(self) -> int:
+        return self.T - self.state.turn
 
     def legal_moves(self) -> list[tuple[str, Cell]]:
         x, y = self.player
-        out = [("wait", self.player)] if self.rules.player_can_wait else []
         free = set(neighbors(self.player, self.dmap, self.state.blocked))
-        for m, (dx, dy) in MOVES.items():
-            if m != "wait" and (x + dx, y + dy) in free:
-                out.append((m, (x + dx, y + dy)))
-        return out
+        return [(m, (x + dx, y + dy)) for m, (dx, dy) in MOVES.items() if (x + dx, y + dy) in free]
 
     def step(self, move: str) -> bool:
         """Play one full turn. Returns False if the move is illegal (no turn is used)."""
@@ -72,14 +65,13 @@ class Match:
         if target is None:
             return False
         prev, self.player = self.player, target
-        moved_in = self.state       # the doors and walls the player actually moved through
-        self.state = tick(self.state)
+        self.state = next_turn(self.state)
         if self.player == self.dmap.treasure:
             self.winner = "player"
             return True
 
         self.percept = sense(self.dmap, self.state, prev, self.player)
-        self.kb.update(self.percept, moved_in)
+        self.kb.update(self.percept, self.state)
         belief = {self.player} if self.warden.oracle else self.kb.belief
 
         d = self.warden.decide(self.state, belief, self.turns_left)
@@ -101,7 +93,7 @@ class Match:
             d.action[0] if d.action[1] is None else f"{d.action[0]}{d.action[1]}",
             bool(problem), d.ms, d.nodes, d.expanded, astar_ok))
 
-        if self.T is not None and self.state.turn >= self.T:
+        if self.state.turn >= self.T:
             self.winner = "warden"
         return True
 
@@ -133,7 +125,7 @@ class Match:
         ms = [r.ms for r in recs] or [0.0]
         dm = self.dmap
         return {
-            "map": dm.name, "size": f"{dm.w}x{dm.h}", "cells": dm.w * dm.h, "rules": self.rules.name,
+            "map": dm.name, "size": f"{dm.w}x{dm.h}", "cells": dm.w * dm.h,
             "warden": self.warden.key, "T": self.T or "", "winner": self.winner or "timeout",
             "player_won": int(self.winner == "player"), "turns": self.state.turn,
             "original_len": self.original_len, "path_increase": self.path_increase(), "invalid": self.invalid,

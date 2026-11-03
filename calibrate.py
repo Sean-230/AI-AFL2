@@ -1,11 +1,12 @@
-"""Calibrate the turn limit T of every map for each difficulty (proposal rules).
+"""Calibrate the turn limit T of every map for each difficulty.
 
   python calibrate.py                  # all maps, writes maps/balance.json
+  python calibrate.py --size 20x20     # only that map set; other maps keep their saved values
   python calibrate.py --games 30       # more games per test point (slower, steadier)
 
-Step 1 plays the Full Warden (W2) against both simulated players at T = 2x..6x the map's
+Step 1 plays the Full Warden (W2) against both simulated players at T = 1.2x..6x the map's
 shortest path. Step 2 bisects, per map and difficulty, between the two T values that bracket the
-target player win rate (Easy 70%, Normal 45%, Hard 20%), because some maps jump from 0% to ~100%
+target player win rate (Easy 50%, Normal 30%, Hard 15%), because some maps jump from 0% to ~100%
 within a few turns. The bots are greedy, so these numbers are a guide for a human, not a guarantee.
 """
 from __future__ import annotations
@@ -18,10 +19,10 @@ from concurrent.futures import ProcessPoolExecutor
 
 from bots import BOTS
 from engine import Match
-from settings import BALANCE_FILE, DIFFICULTIES, map_key, map_paths
-from world import PROPOSAL, DungeonMap
+from settings import BALANCE_FILE, DIFFICULTIES, SIZES, map_key, map_paths
+from world import DungeonMap
 
-FACTORS = (2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)
+FACTORS = (1.2, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)
 
 
 def rate_at(path: str, T: int, games: int, seed: int) -> float:
@@ -29,7 +30,7 @@ def rate_at(path: str, T: int, games: int, seed: int) -> float:
     wins = n = 0
     for i in range(games):
         for bot in BOTS:
-            m = Match(dmap, "W2", T=T, seed=seed + i, rules=PROPOSAL)
+            m = Match(dmap, "W2", T=T, seed=seed + i)
             b = BOTS[bot](seed + i)
             while not m.winner:
                 m.step(b.move(m))
@@ -55,24 +56,26 @@ def bisect(job):
 
 
 def separate(table: dict, curve: dict) -> dict:
-    """Some maps jump from ~0% to ~90% within one or two turns, so two difficulties can land on the
-    same T. Keep Easy > Normal > Hard by at least one turn; the win rate is the nearest one measured."""
-    keys = list(DIFFICULTIES)       # easy, normal, hard
-    for harder, easier in zip(keys[1:], keys):
-        if table[harder] >= table[easier]:
-            table[harder] = table[easier] - 1
-            T = min(curve, key=lambda t: abs(t - table[harder]))
-            table[f"{harder}_win"] = round(curve[T])
+    """Some maps jump from ~0% to ~40% within one turn, so two difficulties can land on the same T.
+    Keep Easy > Normal > Hard by at least one turn by raising the easier one (never lowering the
+    harder one); its win rate is then the nearest measured point."""
+    keys = list(DIFFICULTIES)[::-1]         # hard, normal, easy
+    for harder, easier in zip(keys, keys[1:]):
+        if table[easier] <= table[harder]:
+            table[easier] = table[harder] + 1
+            T = min(curve, key=lambda t: abs(t - table[easier]))
+            table[f"{easier}_win"] = round(curve[T])
     return table
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--games", type=int, default=15, help="games per bot per test point")
+    ap.add_argument("--size", default="all", choices=[*SIZES, "all"])
     ap.add_argument("--seed", type=int, default=5000)
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     args = ap.parse_args(argv)
-    paths = [str(p) for p in map_paths("all")]
+    paths = [str(p) for p in map_paths(args.size)]
 
     jobs = []
     for path in paths:
@@ -103,7 +106,7 @@ def main(argv=None):
             print(f"  {map_key(path)} target {target}%: " +
                   "  ".join(f"T={T}:{r:.0f}%" for T, r in sorted(tried.items())), flush=True)
 
-    balance = {}
+    balance = json.loads(BALANCE_FILE.read_text()) if BALANCE_FILE.exists() else {}
     for path in paths:
         curve = sorted(curves[path].items())
         print(f"\n{map_key(path)}:  " + "  ".join(f"T={T}:{r:.0f}%" for T, r in curve))

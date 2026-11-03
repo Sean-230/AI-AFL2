@@ -1,51 +1,23 @@
 """Dungeon map, game state, STRIPS-style Warden actions and player percepts."""
 from __future__ import annotations
 
-import math
 from collections import deque
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from functools import cached_property
 from pathlib import Path
 
 Cell = tuple[int, int]          # (x, y), x = column, y = row
 Action = tuple[str, Cell | None]
 
-# Default settings. T, energy and cap can be overridden from the command line.
-T_DEFAULT = 40          # proposal: the Warden wins when T turns pass
+# Proposal section 2.1: the Warden wins when T turns pass. T, energy and cap are input settings.
+T_DEFAULT = 40
 ENERGY_START = 6
 ENERGY_CAP = 10
 SIGHT_RANGE = 2
+LOCK_COST = 2           # Table 2.1.1
+WALL_COST = 3
 
-
-@dataclass(frozen=True)
-class Rules:
-    """Action costs and timers. PROPOSAL is Table 2.1.1 of the proposal; VARIANT is the house-rule
-    version (doors reopen, walls cost more and have a cooldown, no turn limit)."""
-    name: str
-    lock_cost: int
-    wall_cost: int
-    lock_turns: int | None      # a locked door reopens after this many player turns (None: stays locked)
-    door_rest: int              # a door that just reopened can't be locked again for this many turns
-    wall_cooldown: int          # after PlaceWall the Warden must wait this many turns to wall again
-    turn_limit: bool            # True: the Warden wins when T turns pass
-    player_can_wait: bool       # False: the player must move one cell every turn (proposal 2.1)
-    energy_value: float         # Minimax leaf bonus per leftover energy point (0 = utility is route length)
-
-    def describe(self) -> str:
-        lock = f"reopens after {self.lock_turns}" if self.lock_turns else "until unlocked"
-        cd = f" + {self.wall_cooldown}-turn cooldown" if self.wall_cooldown else ""
-        return f"Lock {self.lock_cost}e ({lock}) · Wall {self.wall_cost}e{cd}"
-
-
-PROPOSAL = Rules("proposal", lock_cost=2, wall_cost=3, lock_turns=None, door_rest=0, wall_cooldown=0,
-                 turn_limit=True, player_can_wait=False, energy_value=0.0)
-# energy_value 0.35: with a wall cooldown the unanswered last Warden ply makes Minimax hoard energy for
-# a wall it keeps postponing (the horizon effect); valuing leftover energy fixes that. Calibrated.
-VARIANT = Rules("variant", lock_cost=2, wall_cost=5, lock_turns=3, door_rest=2, wall_cooldown=3,
-                turn_limit=False, player_can_wait=True, energy_value=0.35)
-RULESETS = {r.name: r for r in (PROPOSAL, VARIANT)}
-
-MOVES = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "wait": (0, 0)}
+MOVES = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}   # the player must move
 WAIT: Action = ("Wait", None)
 
 TILES = {
@@ -108,41 +80,21 @@ class DungeonMap:
 class State:
     """The changing part of the world. Immutable so Minimax can branch on it cheaply."""
     walls: frozenset            # map walls + walls placed by the Warden
-    locks: frozenset            # (door, turn it reopens or None) for every locked door
+    locked: frozenset           # locked doors (they stay locked until UnlockDoor)
     energy: int
     turn: int = 0               # player moves made so far
-    cooldown: int = 0           # turns until the Warden may place a wall again
-    resting: frozenset = frozenset()  # (door, turn it may be locked again) after it reopened
-    rules: Rules = field(default=PROPOSAL, compare=False)
-
-    @cached_property
-    def locked(self) -> frozenset:
-        return frozenset(d for d, _ in self.locks)
 
     @cached_property
     def blocked(self) -> frozenset:
         return self.walls | self.locked
 
-    def lock_left(self, door: Cell) -> float:
-        """Player turns until this door reopens: 0 when it is open, inf when it stays locked."""
-        for d, until in self.locks:
-            if d == door:
-                return math.inf if until is None else until - self.turn
-        return 0
+
+def initial_state(dmap: DungeonMap, energy: int = ENERGY_START) -> State:
+    return State(dmap.walls, frozenset(), energy, 0)
 
 
-def initial_state(dmap: DungeonMap, energy: int = ENERGY_START, rules: Rules = PROPOSAL) -> State:
-    return State(dmap.walls, frozenset(), energy, 0, rules=rules)
-
-
-def tick(state: State) -> State:
-    """One player turn passes: the clock advances, expired locks reopen, the cooldown runs down."""
-    turn = state.turn + 1
-    expired = lambda until: until is not None and until <= turn
-    reopened = {(d, turn + state.rules.door_rest) for d, until in state.locks if expired(until)}
-    return replace(state, turn=turn, locks=frozenset(l for l in state.locks if not expired(l[1])),
-                   cooldown=max(0, state.cooldown - 1),
-                   resting=frozenset(r for r in state.resting if r[1] > turn) | reopened)
+def next_turn(state: State) -> State:
+    return replace(state, turn=state.turn + 1)
 
 
 def neighbors(c: Cell, dmap: DungeonMap, blocked: frozenset):
@@ -159,24 +111,20 @@ def manhattan(a: Cell, b: Cell) -> int:
 # ---------------------------------------------------------------- STRIPS actions
 
 def preconditions(dmap: DungeonMap, state: State, action: Action) -> str | None:
-    """Return why the action's STRIPS preconditions fail, or None when they hold.
+    """Return why the action's STRIPS preconditions fail, or None when they hold (Table 2.1.1).
     The KB's Valid(a) check (treasure stays reachable) is separate, see kb.is_valid."""
     kind, c = action
-    if kind == "PlaceWall" and state.cooldown > 0:
-        return f"on cooldown ({state.cooldown} turns)"
     if kind == "LockDoor":
         if c not in dmap.doors:
             return "not a door"
         if c in state.locked:
             return "already locked"
-        if any(d == c for d, _ in state.resting):
-            return "door just reopened"
-        if state.energy < state.rules.lock_cost:
+        if state.energy < LOCK_COST:
             return "not enough energy"
     elif kind == "PlaceWall":
         if not dmap.is_plain_floor(c) or c in state.walls:
             return "cell is not empty floor"
-        if state.energy < state.rules.wall_cost:
+        if state.energy < WALL_COST:
             return "not enough energy"
     elif kind == "UnlockDoor":
         if c not in state.locked:
@@ -187,19 +135,14 @@ def preconditions(dmap: DungeonMap, state: State, action: Action) -> str | None:
 
 
 def apply(state: State, action: Action, cap: int = ENERGY_CAP) -> State:
-    """Apply the action's effects. Assumes preconditions already hold."""
+    """Apply the action's effects (Table 2.1.1). Assumes preconditions already hold."""
     kind, c = action
-    r = state.rules
     if kind == "LockDoor":
-        until = None if r.lock_turns is None else state.turn + r.lock_turns
-        return replace(state, locks=state.locks | {(c, until)}, energy=state.energy - r.lock_cost)
+        return replace(state, locked=state.locked | {c}, energy=state.energy - LOCK_COST)
     if kind == "PlaceWall":
-        return replace(state, walls=state.walls | {c}, energy=state.energy - r.wall_cost,
-                       cooldown=r.wall_cooldown)
+        return replace(state, walls=state.walls | {c}, energy=state.energy - WALL_COST)
     if kind == "UnlockDoor":
-        rest = {(c, state.turn + r.door_rest)} if r.door_rest else set()
-        return replace(state, locks=frozenset(l for l in state.locks if l[0] != c),
-                       resting=state.resting | rest, energy=min(cap, state.energy + 1))
+        return replace(state, locked=state.locked - {c}, energy=min(cap, state.energy + 1))
     return replace(state, energy=min(cap, state.energy + 1))   # Wait
 
 

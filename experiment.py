@@ -1,14 +1,13 @@
 """Headless experiments from proposal section 2.2.
 
   python experiment.py                        # proposal setup: W0-W3 x Rusher/Cautious, 200 games
-                                              # per pair, the three 10x10 maps, proposal rules
+                                              # per pair, the three 10x10 maps
   python experiment.py --size 20x20           # the same on the three 20x20 maps
-  python experiment.py --rules variant        # the house-rule variant (no turn limit)
   python experiment.py --difficulty hard      # turn limit from maps/balance.json (default: normal)
   python experiment.py --games 20             # quick run
   python experiment.py --scaling              # time and nodes per move on random 8x8 .. 20x20 maps
 
-Each run writes to results/<rules>-<size>-<difficulty>/: games.csv (one row per game), moves.csv
+Each run writes to results/<size>-<difficulty>/: games.csv (one row per game), moves.csv
 (one row per Warden move), summary.csv, summary_by_map.csv and PNG charts (with matplotlib).
 """
 from __future__ import annotations
@@ -28,7 +27,7 @@ from engine import Match
 from mapgen import random_map
 from settings import DIFFICULTIES, SIZES, game_settings, map_paths
 from warden import LOOKAHEAD, MAX_BLOCKS, WARDENS
-from world import ENERGY_CAP, ENERGY_START, PROPOSAL, RULESETS, DungeonMap
+from world import ENERGY_CAP, ENERGY_START, DungeonMap
 
 HERE = Path(__file__).parent
 # validated categorical palette (dataviz reference), fixed order W0..W3
@@ -37,10 +36,9 @@ SERIES = {"W0": "#2a78d6", "W1": "#eb6834", "W2": "#1baf7a", "W3": "#eda100"}
 
 def play(job: dict):
     dmap: DungeonMap = job["dmap"]
-    m = Match(dmap, job["warden"], job["T"], job["energy"], job["cap"], job["seed"], check_astar=True,
-              rules=RULESETS[job.get("rules", PROPOSAL.name)])
+    m = Match(dmap, job["warden"], job["T"], job["energy"], job["cap"], job["seed"], check_astar=True)
     bot = BOTS[job["bot"]](job["seed"])
-    while not m.winner and m.state.turn < job["max_turns"]:
+    while not m.winner:
         m.step(bot.move(m))
     recs = m.records
     game = {**m.summary(), "bot": job["bot"], "seed": job["seed"]}
@@ -198,45 +196,42 @@ def main(argv=None):
     ap.add_argument("--games", type=int, default=200, help="games per (Warden, bot) pair, spread over the maps")
     ap.add_argument("--size", default="10x10", choices=[*SIZES, "all"], help="which map set (default: 10x10, as in the proposal)")
     ap.add_argument("--maps", nargs="+", help="explicit map files instead of --size")
-    ap.add_argument("--rules", default="proposal", choices=list(RULESETS))
     ap.add_argument("--difficulty", default="normal", choices=list(DIFFICULTIES),
-                    help="sets T per map from maps/balance.json (proposal rules) or Warden energy (variant)")
+                    help="sets T per map from maps/balance.json")
     ap.add_argument("--wardens", nargs="+", default=sorted(WARDENS), choices=sorted(WARDENS))
     ap.add_argument("--bots", nargs="+", default=sorted(BOTS), choices=sorted(BOTS))
     ap.add_argument("--T", type=int, help="override the turn limit for every map")
-    ap.add_argument("--max-turns", type=int, default=2000, help="safety stop for one game when there is no limit")
     ap.add_argument("--energy", type=int, help="override the Warden's starting energy")
     ap.add_argument("--cap", type=int, help="override the Warden's energy cap")
     ap.add_argument("--seed", type=int, default=1000, help="base seed; game i uses seed+i for every Warden")
     ap.add_argument("--jobs", type=int, default=os.cpu_count(), help="worker processes")
-    ap.add_argument("--out", help="output folder (default: results/<rules>-<size>-<difficulty>)")
+    ap.add_argument("--out", help="output folder (default: results/<size>-<difficulty>)")
     ap.add_argument("--scaling", action="store_true", help="run the grid-size scaling test instead")
     ap.add_argument("--scaling-maps", type=int, default=5, help="random maps per size")
     ap.add_argument("--scaling-games", type=int, default=4, help="games per random map")
     args = ap.parse_args(argv)
-    default_out = "scaling" if args.scaling else f"{args.rules}-{'custom' if args.maps else args.size}-{args.difficulty}"
+    default_out = "scaling" if args.scaling else f"{'custom' if args.maps else args.size}-{args.difficulty}"
     out = Path(args.out or HERE / "results" / default_out)
     out.mkdir(parents=True, exist_ok=True)
 
     if args.scaling:
         return scaling(args, out)
 
-    rules = RULESETS[args.rules]
     paths = args.maps or [str(p) for p in map_paths(args.size)]
     setups = []
     for path in paths:
         dmap = DungeonMap.load(path)
-        cfg = game_settings(path, Match(dmap).original_len, args.difficulty, rules)
+        cfg = game_settings(path, Match(dmap).original_len, args.difficulty)
         for key in ("T", "energy", "cap"):
             if getattr(args, key) is not None:
                 cfg[key] = getattr(args, key)
         setups.append((dmap, cfg))
-        print(f"  {dmap.name:<10} {dmap.w}x{dmap.h}  T={cfg['T'] or 'none'}  energy {cfg['energy']}/{cfg['cap']}")
-    jobs = [dict(dmap=setups[i % len(setups)][0], warden=w, bot=b, seed=args.seed + i, rules=args.rules,
-                 max_turns=args.max_turns, **setups[i % len(setups)][1])
+        print(f"  {dmap.name:<10} {dmap.w}x{dmap.h}  T={cfg['T']}  energy {cfg['energy']}/{cfg['cap']}")
+    jobs = [dict(dmap=setups[i % len(setups)][0], warden=w, bot=b, seed=args.seed + i,
+                 **setups[i % len(setups)][1])
             for w in args.wardens for b in args.bots for i in range(args.games)]
     print(f"Running {len(jobs)} games ({len(args.wardens)} Wardens x {len(args.bots)} bots x {args.games}), "
-          f"{args.rules} rules, {args.difficulty}, with {args.jobs} workers")
+          f"{args.difficulty}, with {args.jobs} workers")
     results = run_jobs(jobs, args.jobs)
     games = [g for g, _ in results]
     moves = [mv for _, ms in results for mv in ms]
@@ -260,8 +255,7 @@ def scaling(args, out: Path):
             dmap = random_map(n, seed=n * 100 + k)
             for g in range(args.scaling_games):
                 jobs.append(dict(dmap=dmap, warden="W2", bot="rusher", seed=args.seed + g,
-                                 T=4 * n, energy=args.energy or ENERGY_START, cap=args.cap or ENERGY_CAP,
-                                 max_turns=4 * n))
+                                 T=4 * n, energy=args.energy or ENERGY_START, cap=args.cap or ENERGY_CAP))
     print(f"Scaling test: W2 vs Rusher on {len(jobs)} games, sizes {sizes[0]}x{sizes[0]}..{sizes[-1]}x{sizes[-1]}")
     results = run_jobs(jobs, args.jobs)
     rows = []

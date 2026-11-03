@@ -1,11 +1,10 @@
 """Difficulty presets and map lists, shared by the game, the experiments and calibrate.py.
 
-Under the proposal rules the Warden regains 1 energy every turn, so starting energy barely changes
-how many blocks it can place over a whole game; the turn limit T is what decides how hard a map
-is. Every map therefore has its own T per difficulty, calibrated by calibrate.py so that the Full
-Warden (W2) loses to the simulated players about `target`% of the time. The results live in
-maps/balance.json. Under the variant rules there is no turn limit, so difficulty sets the Warden's
-energy instead.
+Under the proposal rules the Warden regains 1 energy every turn, so its starting energy barely changes
+how many blocks it can place over a whole game; the turn limit T (an input setting, proposal 2.1) is
+what decides how hard a map is. Every map therefore has its own T per difficulty, calibrated by
+calibrate.py so that the Full Warden (W2) loses to the simulated players about `target`% of the time.
+The results live in maps/balance.json.
 """
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from world import ENERGY_CAP, ENERGY_START, Rules
+from world import ENERGY_CAP, ENERGY_START
 
 HERE = Path(__file__).parent
 MAPS_DIR = HERE / "maps"
@@ -28,13 +27,12 @@ class Difficulty:
     label: str
     target: int             # player win % against W2 that calibrate.py aims for
     fallback_factor: float  # T = factor x shortest path for maps that aren't calibrated yet
-    variant_energy: tuple[int, int]  # (start, cap) under the variant rules
 
 
 DIFFICULTIES = {d.key: d for d in (
-    Difficulty("easy", "Easy", 70, 5.0, (3, 6)),
-    Difficulty("normal", "Normal", 45, 4.0, (ENERGY_START, ENERGY_CAP)),
-    Difficulty("hard", "Hard", 20, 3.0, (10, 14)),
+    Difficulty("easy", "Easy", 50, 4.0),
+    Difficulty("normal", "Normal", 30, 3.0),
+    Difficulty("hard", "Hard", 15, 2.5),
 )}
 
 
@@ -59,13 +57,8 @@ def load_balance() -> dict:
         return {}
 
 
-def game_settings(path: str | Path, shortest: int, difficulty: str, rules: Rules,
-                  balance: dict | None = None) -> dict:
+def game_settings(path: str | Path, shortest: int, difficulty: str, balance: dict | None = None) -> dict:
     """Match keyword arguments (T, energy, cap) for a map at a difficulty."""
-    d = DIFFICULTIES[difficulty]
-    if not rules.turn_limit:
-        energy, cap = d.variant_energy
-        return {"T": None, "energy": energy, "cap": cap}
     table = (load_balance() if balance is None else balance).get(map_key(path), {})
-    T = table.get(difficulty) or math.ceil(d.fallback_factor * shortest)
+    T = table.get(difficulty) or math.ceil(DIFFICULTIES[difficulty].fallback_factor * shortest)
     return {"T": T, "energy": ENERGY_START, "cap": ENERGY_CAP}

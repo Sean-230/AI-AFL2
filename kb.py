@@ -40,9 +40,9 @@ class KnowledgeBase:
     def update(self, p: Percept, state: State) -> list[Inference]:
         dmap, log = self.dmap, []
 
-        # R2: the player moved one cell from some cell of B_t-1. Under the proposal rules the player
-        # must move, so staying put is not Connected; the variant lets the player wait (reflexive).
-        b = set(self.belief) if state.rules.player_can_wait else set()
+        # R2: the player moved one cell from some cell of B_t-1 (the player must move every turn,
+        # so staying put is not Connected).
+        b = set()
         for c in self.belief:
             b.update(neighbors(c, dmap, state.blocked))
         log.append(Inference("R2", "expand by one move", len(self.belief), len(b)))

@@ -21,8 +21,7 @@ from bots import BOTS
 from engine import Match
 from kb import RULES as FOL_RULES
 from settings import DIFFICULTIES, SIZES, game_settings, load_balance, map_key, map_paths
-from warden import WARDENS
-from world import RULESETS, DungeonMap, action_str, sight_cells
+from world import LOCK_COST, WALL_COST, DungeonMap, action_str, sight_cells
 
 W, H = 1280, 800
 TOP = 60                    # top bar height
@@ -50,19 +49,9 @@ COL = {
 KEYMOVES = {
     pygame.K_w: "up", pygame.K_UP: "up", pygame.K_s: "down", pygame.K_DOWN: "down",
     pygame.K_a: "left", pygame.K_LEFT: "left", pygame.K_d: "right", pygame.K_RIGHT: "right",
-    pygame.K_SPACE: "wait",
 }
 CONTROLLERS = {"human": "You (WASD)", "rusher": "Rusher bot", "cautious": "Cautious bot"}
-WARDEN_INFO = {
-    "W0": "Places a random valid block each turn (baseline).",
-    "W1": "Predicts your route with A* and blocks it greedily, no lookahead (baseline).",
-    "W2": "Belief set + A* + planning + Minimax with alpha-beta: the full AI.",
-    "W3": "Like W2 but it can see you. An upper bound, not fair play.",
-}
-RULE_INFO = {
-    "proposal": "Proposal rules: the Warden wins after T turns; locks stay until unlocked.",
-    "variant": "Variant: no turn limit, doors reopen, walls have a cooldown. Score = turns used.",
-}
+WARDEN = "W2"   # the game always uses the Full Warden; W0-W3 are only compared in experiment.py
 
 
 def font(size: int, bold: bool = False, mono: bool = True) -> pygame.font.Font:
@@ -140,8 +129,6 @@ class Menu:
             ("Map size", "size", list(SIZES), lambda v: v),
             ("Map", "map", maps, lambda v: v.title()),
             ("Difficulty", "difficulty", list(DIFFICULTIES), lambda v: DIFFICULTIES[v].label),
-            ("Warden AI", "warden", sorted(WARDENS), lambda v: f"{v}  {WARDENS[v].label}"),
-            ("Rules", "rules", list(RULESETS), lambda v: v.title()),
             ("Player", "ctrl", list(CONTROLLERS), lambda v: CONTROLLERS[v]),
         ]
 
@@ -183,17 +170,10 @@ class Menu:
         cfg, app = self.app.cfg, self.app
         key = self.options[self.sel][1]
         if key == "difficulty":
-            if not RULESETS[cfg["rules"]].turn_limit:
-                e, c = DIFFICULTIES[cfg["difficulty"]].variant_energy
-                return f"Variant rules have no turn limit: the Warden starts with {e} energy (cap {c})."
             s = app.preview_settings()
             win = load_balance().get(map_key(app.map_path()), {}).get(f"{cfg['difficulty']}_win")
             extra = f" In calibration the bots beat W2 in ~{win}% of games." if win is not None else ""
             return f"You get T = {s['T']} turns to reach the treasure.{extra}"
-        if key == "warden":
-            return WARDEN_INFO[cfg["warden"]]
-        if key == "rules":
-            return RULE_INFO[cfg["rules"]] + "  " + RULESETS[cfg["rules"]].describe()
         if key in ("map", "size"):
             m = app.preview_map()
             return f"{m.w}x{m.h}, shortest path {app.preview_shortest()} steps, {len(m.doors)} doors."
@@ -268,14 +248,13 @@ class GameScreen:
         cfg = app.cfg
         self.path = app.map_path()
         self.dmap = DungeonMap.load(self.path)
-        self.rules = RULESETS[cfg["rules"]]
-        self.settings = game_settings(self.path, Match(self.dmap).original_len, cfg["difficulty"], self.rules)
-        if app.args.T and self.rules.turn_limit:
+        self.settings = game_settings(self.path, Match(self.dmap).original_len, cfg["difficulty"])
+        if app.args.T:
             self.settings["T"] = app.args.T
         for key in ("energy", "cap"):
             if getattr(app.args, key) is not None:
                 self.settings[key] = getattr(app.args, key)
-        self.match = Match(self.dmap, cfg["warden"], seed=app.seed, rules=self.rules, **self.settings)
+        self.match = Match(self.dmap, WARDEN, seed=app.seed, **self.settings)
         app.seed += 1
         self.bot = BOTS[cfg["ctrl"]](app.seed) if cfg["ctrl"] != "human" else None
         self.show_belief, self.reveal, self.paused_bot = True, False, False
@@ -346,9 +325,7 @@ class GameScreen:
         before_walls, before_locked, prev = m.state.walls, m.state.locked, m.player
         if not m.step(move):
             if not m.winner:
-                why = ("Proposal rules: you must move one cell every turn." if move == "wait"
-                       else "Blocked - you can't walk there.")
-                self.message = (why, pygame.time.get_ticks())
+                self.message = ("Blocked - you can't walk there.", pygame.time.get_ticks())
             return
         now = pygame.time.get_ticks()
         if m.player != prev:
@@ -367,7 +344,7 @@ class GameScreen:
             self.log.append(("accent", f"T{turn}: an eye spotted you!"))
         self.was_seen = seen
         d = m.decision
-        self.route = (m.warden.routes.path(d.assumed, m.state) or []) if d and d.assumed and not m.winner else []
+        self.route = (m.warden.routes.path(d.assumed, m.state.blocked) or []) if d and d.assumed and not m.winner else []
         if m.winner:
             self.log.append(("good", "You reached the treasure!") if m.winner == "player"
                             else ("bad", "Time is up - the Warden wins."))
@@ -438,8 +415,7 @@ class GameScreen:
         diff_color = {"easy": "good", "normal": "accent", "hard": "bad"}[cfg["difficulty"]]
         for text, color in ((f"{self.dmap.name.title()} {self.dmap.w}x{self.dmap.h}", "text"),
                             (DIFFICULTIES[cfg["difficulty"]].label, diff_color),
-                            (f"{self.rules.name.title()} rules", "dim"),
-                            (f"{cfg['warden']} {WARDENS[cfg['warden']].label}", "dim")):
+                            ("Full Warden", "dim")):
             t = app.f_s.render(text, True, COL[color])
             chip = pygame.Rect(x, TOP // 2 - 13, t.get_width() + 22, 26)
             pygame.draw.rect(surf, COL["card"], chip, border_radius=13)
@@ -467,7 +443,7 @@ class GameScreen:
                 pygame.draw.circle(surf, COL["eye"], er.center, max(2, s // 10))
 
         for c in dm.doors:
-            self.draw_door(surf, c, st.lock_left(c), now)
+            self.draw_door(surf, c, c in st.locked, now)
         for c in st.walls - dm.walls:
             self.draw_placed_wall(surf, c, now)
         self.draw_treasure(surf, now)
@@ -501,14 +477,14 @@ class GameScreen:
         t.fill((*color, alpha))
         surf.blit(t, self.rect(c).topleft)
 
-    def draw_door(self, surf, c, lock_left, now):
+    def draw_door(self, surf, c, locked, now):
         s = self.cell
         r = self.rect(c, max(2, s // 7))
         pygame.draw.rect(surf, COL["door"], r, border_radius=3)
         for i in (1, 2):
             x = r.x + r.w * i // 3
             pygame.draw.line(surf, COL["door_hi"], (x, r.y + 2), (x, r.bottom - 3), 1)
-        if not lock_left:
+        if not locked:
             return
         anim = self.anims.get(c)
         k = ease_out((now - anim[1]) / 300) if anim and anim[0] == "lock" else 1
@@ -517,8 +493,6 @@ class GameScreen:
         body.center = (r.centerx, r.centery + s // 12)
         pygame.draw.arc(surf, COL["locked"], body.move(0, -body.h // 2 - 2).inflate(-body.w // 4, 0), 0, 3.15, max(1, s // 20))
         pygame.draw.rect(surf, COL["locked"], body, border_radius=2)
-        if lock_left != math.inf and s >= 24:
-            blit_text(surf, self.app.f_s, str(int(lock_left)), "text", (r.right - 2, r.bottom), "bottomright")
 
     def draw_placed_wall(self, surf, c, now):
         s = self.cell
@@ -598,16 +572,9 @@ class GameScreen:
             y += 8
 
         heading("STATUS")
-        if m.T:
-            bar("Turn", st.turn, m.T, "bad" if m.T - st.turn <= 5 else "sight", f"{st.turn}/{m.T}")
-        else:
-            text(f"Turn {st.turn}   (no turn limit - fewer turns is better)")
-            y += 2
+        bar("Turn", st.turn, m.T, "bad" if m.T - st.turn <= 5 else "sight", f"{st.turn}/{m.T}")
         bar("Warden energy", st.energy, m.cap, "accent", f"{st.energy}/{m.cap}")
-        if self.rules.wall_cooldown:
-            bar("Wall cooldown", self.rules.wall_cooldown - st.cooldown, self.rules.wall_cooldown,
-                "bad" if st.cooldown else "good", f"{st.cooldown}" if st.cooldown else "ready")
-        text(self.rules.describe(), "faint")
+        text(f"LockDoor {LOCK_COST}e (stays locked) - PlaceWall {WALL_COST}e - Unlock/Wait +1e", "faint")
 
         divider()
         heading("PERCEPTS")
@@ -706,7 +673,7 @@ class App:
             size = p.parent.name if p.parent.name in SIZES else size
             name = p.stem
         self.cfg = {"size": size, "map": name or map_paths(size)[0].stem, "difficulty": args.difficulty,
-                    "warden": args.warden, "rules": args.rules, "ctrl": args.bot or "human"}
+                    "ctrl": args.bot or "human"}
         self.menu = Menu(self)
         self.game: GameScreen | None = None
         self._preview = None
@@ -731,7 +698,7 @@ class App:
         return self._preview[2]
 
     def preview_settings(self) -> dict:
-        return game_settings(self.map_path(), self.preview_shortest(), self.cfg["difficulty"], RULESETS[self.cfg["rules"]])
+        return game_settings(self.map_path(), self.preview_shortest(), self.cfg["difficulty"])
 
     # ---- actions
 
@@ -799,20 +766,19 @@ class App:
             col_w = box.w // 2 - 60
             y = box.y + 86
             for para in (
-                "Reach the gold treasure. Each turn you move one cell, then the Warden acts "
-                "(waiting with Space is only allowed under the variant rules).",
+                "Reach the gold treasure. Each turn you move one cell, then the Warden acts.",
                 "The Warden can lock doors and raise walls, but it may never cut you off completely.",
                 "It can't see you. Hidden pressure plates, creaking doors and eyes (2-cell sight) tell it roughly "
                 "where you are; the red cells are every place it still thinks you could be.",
                 "It plans against the cell closest to the treasure, looking 3 moves ahead with Minimax.",
-                "Proposal rules: you lose when the turn limit runs out. Variant rules: no limit, fewer turns is better.",
+                "You lose when the turn limit T runs out. Difficulty sets T for each map.",
             ):
                 for line in wrap(para, self.f, col_w):
                     blit_text(surf, self.f, line, "text", (box.x + 36, y))
                     y += 22
                 y += 8
             y += 6
-            for k, v in (("WASD / arrows", "move"), ("Space", "wait (variant rules only)"), ("B", "belief overlay"),
+            for k, v in (("WASD / arrows", "move"), ("B", "belief overlay"),
                          ("V", "reveal hidden sensors"), ("Tab", "human / bot"), ("P, +/-", "pause bot, bot speed"),
                          ("R", "restart"), ("Esc", "pause menu")):
                 blit_text(surf, self.f_b, k, "accent", (box.x + 36, y))
@@ -875,11 +841,9 @@ class App:
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Dungeon Warden")
     ap.add_argument("--map", help="map file, e.g. maps/20x20/fortress.txt")
-    ap.add_argument("--warden", default="W2", choices=sorted(WARDENS))
     ap.add_argument("--difficulty", default="normal", choices=list(DIFFICULTIES))
-    ap.add_argument("--rules", default="proposal", choices=list(RULESETS))
     ap.add_argument("--bot", choices=sorted(BOTS), help="let a bot play instead of you")
-    ap.add_argument("--T", type=int, help="override the turn limit (proposal rules)")
+    ap.add_argument("--T", type=int, help="override the turn limit T")
     ap.add_argument("--energy", type=int, help="override the Warden's starting energy")
     ap.add_argument("--cap", type=int, help="override the Warden's energy cap")
     ap.add_argument("--seed", type=int, default=0)
