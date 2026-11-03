@@ -4,33 +4,48 @@ A single-player, turn-based 2D grid game on a **20x20 dungeon map**. You race to
 
 UC Informatics 26/27, Artificial Intelligence: Angga Dhammika Jaya, Kristoforus Bertrand Wahyudi and Sean Lawton.
 
-## Project Structure
+## Architecture (Agent-Environment + OOP)
 
-The codebase is organized into two main directories for clarity and separation of concerns:
+The project is organized into two main directories (`DungeonWarden/` and `Experiments/`) following the **Agent-Environment (PEAS) Layered Architecture**, **Object-Oriented Programming (OOP)** principles, and **Single Responsibility Principle (SRP)**:
 
 ```text
 AI-AFL2/
-├── DungeonWarden/                # Main game package (Core, AI, Maps, UI)
+├── DungeonWarden/                # Main Game Package (Core, AI, UI, Maps)
 │   ├── main.py                   # Entry point to launch the Pygame application
-│   ├── core/
-│   │   ├── world.py              # Map loading, State, STRIPS actions (preconditions & effects), Percepts
-│   │   ├── engine.py             # Match turn loop, ground-truth checks, per-game metrics
-│   │   ├── settings.py           # Difficulty presets, 20x20 map discovery, balance.json loader
-│   │   └── mapgen.py             # Map generators (dungeon_map, random_map) and route_count
-│   ├── ai/
-│   │   ├── kb.py                 # Knowledge Base: FOL rules (R1-R4) -> belief set B_t, Valid(a)
-│   │   ├── search.py             # A* search, BFS distances, RouteCache
-│   │   ├── warden.py             # W0 Random, W1 A*-greedy, W2 Full Minimax Warden, W3 Oracle
-│   │   └── bots.py               # Simulated player bots: Rusher and Cautious
-│   ├── ui/
-│   │   └── game.py               # Pygame UI (Main Menu, Game Screen, Reasoning Panel)
+│   ├── core/                     # ENVIRONMENT LAYER: Grid, State, Sensors, Actuators, & Match Engine
+│   │   ├── settings.py           # SettingsManager & Difficulty presets
+│   │   ├── dungeon_map.py        # DungeonMap class (20x20 grid geometry & spatial queries)
+│   │   ├── game_state.py         # Immutable GameState, Percept, & TurnRecord models
+│   │   ├── action_schema.py      # StripsActionSchema (STRIPS preconditions & effects, Table 2.1.1)
+│   │   ├── sensor_system.py      # SensorSystem (plates, door noise, 2-cell sight)
+│   │   ├── map_generator.py      # MapGenerator & RouteAnalyzer (max-flow disjoint routes)
+│   │   └── match_engine.py       # MatchEngine (turn loop, ground-truth validation, metrics)
+│   ├── ai/                       # AGENT LAYER: FOL Reasoning, Search, Minimax, & Bots
+│   │   ├── pathfinder.py         # Pathfinder (A* & BFS) and RouteCache
+│   │   ├── knowledge_base.py     # KnowledgeBase (FOL rules R1-R4) & ActionValidator (Valid(a))
+│   │   ├── warden_base.py        # Abstract BaseWarden (ABC) & Decision telemetry
+│   │   ├── wardens.py            # RandomWarden (W0), GreedyWarden (W1), MinimaxWarden (W2), OracleWarden (W3)
+│   │   └── player_bots.py        # Abstract BasePlayerBot (ABC), RusherBot, & CautiousBot
+│   ├── ui/                       # PRESENTATION LAYER: Modular Pygame UI
+│   │   ├── theme.py              # Theme, color palette, typography, & easing helpers
+│   │   ├── components.py         # Reusable Button UI widget
+│   │   ├── menu_view.py          # MenuView (main menu & live 20x20 map preview)
+│   │   ├── board_view.py         # BoardView (20x20 dungeon grid, torch light, animations, sensor preview)
+│   │   ├── panel_view.py         # ReasoningPanelView (status, percepts, KB log, Minimax candidate bars)
+│   │   ├── overlay_view.py       # OverlayView (Pause modal, Help/FOL modal, Game Over overlay)
+│   │   ├── tutorial_view.py      # TutorialView (5-step hands-on practice tutorial in ID/EN)
+│   │   ├── game_session.py       # GameSession (active match loop & input handling)
+│   │   └── app.py                # DungeonWardenApp (window lifecycle, event routing, CSV logging)
 │   ├── maps/                     # Curated 20x20 maps (catacombs, fortress, labyrinth) & balance.json
 │   └── logs/                     # In-game play metrics log (games.csv)
 │
-└── Experiments/                  # Evaluation, calibration, unit tests, and experiment outputs
-    ├── experiment.py             # Headless evaluation (W0-W3 vs Rusher/Cautious) & scaling test
-    ├── calibrate.py              # Per-map turn-limit (T) calibration per difficulty
-    ├── test_core.py              # Unit test suite (Map, Search, KB, STRIPS rules, Game loop)
+└── Experiments/                  # Evaluation Suite, Calibration, & Unit Tests
+    ├── experiment.py             # ExperimentController CLI entry point
+    ├── runner.py                 # SimulationRunner (parallel multiprocessing execution)
+    ├── metrics.py                # MetricsAggregator & ReportWriter (statistics, CSV, console tables)
+    ├── plotter.py                # ExperimentPlotter (Matplotlib chart generation)
+    ├── calibrate.py              # DifficultyCalibrator (turn-limit T calibration per difficulty)
+    ├── test_core.py              # Unit test suite (20 tests verifying Core & AI classes)
     └── results/                  # CSV metrics and PNG charts (20x20-normal/, scaling/)
 ```
 
@@ -41,25 +56,12 @@ python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-The project uses **pygame-ce**, the community edition of pygame.
-
 ## Play
 
 ```bash
 python DungeonWarden/main.py
-# or
-python -m DungeonWarden.main
+python DungeonWarden/main.py --tutorial
 ```
-
-The Warden in the game is always the **Full Warden (W2)**: belief set, A\*, STRIPS planning and Minimax. The other versions (W0 Random, W1 A\*-greedy, W3 Oracle) exist to evaluate the method in `Experiments/experiment.py`.
-
-The main menu lets you choose:
-
-| Setting | Options |
-|---|---|
-| **Map (20x20)** | Catacombs, Fortress, Labyrinth. Every map has 4 independent routes (2-3 door-free), so you can improvise. A live preview is shown. |
-| **Difficulty** | Easy / Normal / Hard: the turn limit `T` for that map |
-| **Player** | You, the Rusher bot or the Cautious bot |
 
 Command-line options skip the menu or set the proposal's input settings (`T`, `energy`, `seed`):
 
@@ -69,53 +71,6 @@ python DungeonWarden/main.py --skip-menu --bot rusher
 python DungeonWarden/main.py --T 90 --energy 6 --cap 10 --seed 7
 ```
 
-| Key | Action |
-|---|---|
-| WASD / arrows | move one cell (you must move every turn) |
-| B | belief overlay: red = `B_t`, yellow box = assumed cell, yellow line = predicted route |
-| V | reveal hidden sensors (plates, eyes, sight area) |
-| H | help and the Warden's FOL rules |
-| Tab | switch Human / Rusher bot / Cautious bot |
-| P, + / − | pause the bot, change bot speed |
-| R | restart |
-| Esc | pause menu (resume, restart, main menu, quit) |
-
-The right-hand **reasoning panel** shows:
-- the turn and the Warden's energy
-- this turn's percepts
-- which KB rule fired and how it shrank `|B_t|`
-- the worst-case cell the Warden plans against
-- the chosen action, its Minimax value, nodes searched, A\* expansions and time
-- every root candidate as a bar (`<=` marks a branch alpha-beta pruned)
-
-Every finished game is appended to **`DungeonWarden/logs/games.csv`**.
-
-## Rules (Proposal Section 2.1, Table 2.1.1)
-
-- A 20x20 grid with walls, lockable doors, footstep plates, eyes and one treasure. The Warden wins if **`T` turns pass** first.
-- Each turn the **player moves one cell** (waiting is not allowed). The Warden then updates its belief set from the percepts and performs **one** action:
-
-| Action | Preconditions | Effects |
-|---|---|---|
-| `LockDoor(d)` | `Door(d), ¬Locked(d), energy ≥ 2, Valid` | `Locked(d), energy −2` (stays locked until unlocked) |
-| `PlaceWall(c)` | `Empty(c), energy ≥ 3, Valid` | `Wall(c), energy −3` |
-| `UnlockDoor(d)` | `Locked(d)` | `¬Locked(d), energy +1` |
-| `Wait` | `none` | `energy +1` |
-
-Energy starts at 6 and is capped at 10 (both are input settings).
-
-## Difficulty & 20x20 Maps
-
-The Warden regains 1 energy every turn, so **the turn limit `T` decides how hard a map is.** `Experiments/calibrate.py` plays W2 against both simulated players on every 20x20 map and picks `T` per difficulty, aiming at a player win rate of **Easy 50%, Normal 30% and Hard 15%**.
-
-The result lives in `DungeonWarden/maps/balance.json`:
-
-| Map (20x20) | Shortest path | Routes (door-free) | Easy T | **Normal T** | Hard T |
-|---|---|---|---|---|---|
-| Catacombs | 30 | 4 (2) | 123 | **120** | 112 |
-| Fortress | 28 | 4 (2) | 124 | **112** | 63 |
-| Labyrinth | 31 | 4 (3) | 143 | **123** | 62 |
-
 ## Experiments & Unit Tests (Proposal Section 2.2)
 
 ```bash
@@ -123,40 +78,5 @@ python Experiments/experiment.py                  # 4 Wardens x 2 players x 200 
 python Experiments/experiment.py --difficulty hard
 python Experiments/experiment.py --scaling        # W2 time and nodes per move on random 8x8 .. 20x20 maps
 python Experiments/calibrate.py                   # recompute DungeonWarden/maps/balance.json
-python -m unittest discover Experiments           # run unit test suite
-```
-
-Each experiment run writes to `Experiments/results/20x20-<difficulty>/`:
-- `games.csv`: one row per game
-- `moves.csv`: one row per Warden move
-- `summary.csv` and `summary_by_map.csv`
-- charts: `win_rate.png`, `turns.png`, `path_increase.png`, `belief_precision.png`
-
-The scaling test writes to `Experiments/results/scaling/`.
-
-## Evaluation Summary (20x20 Maps)
-
-Four Wardens play 200 games against each of the two simulated players on the three 20x20 maps at Normal difficulty:
-
-| Version | Role | What it adds | 20x20 Cautious Win % | 20x20 Rusher Win % |
-|---|---|---|---|---|
-| **W0 Random** | baseline | random valid block each turn | 100.0% | 100.0% |
-| **W1 A\*-greedy** | baseline | KB + A\* route, best single block, no lookahead | 89.5% | 87.0% |
-| **W2 Full Warden** | our method | KB + A\* + STRIPS planning + Minimax (3 plies, alpha-beta) | **29.5%** | **30.0%** |
-| **W3 Oracle** | upper bound | W2, but told the true player cell | 8.0% | 3.0% |
-
-### Key Metrics for W2 on 20x20
-- **Path-length increase:** `+93.8` steps (Cautious), `+90.8` steps (Rusher)
-- **Belief recall:** **100%** (true player cell is always inside `B_t`)
-- **Belief precision (mean `1/|B_t|`):** `0.22`
-- **Invalid actions:** **0**
-- **A\* vs BFS route length mismatch:** **0**
-
-### Map Format
-
-ASCII files in `DungeonWarden/maps/`. Lines starting with `;` are comments.
-
-```text
-#  wall        D  door      o  footstep plate
-.  floor       E  eye       T  treasure      P  player start
+python -m unittest discover Experiments -v        # run unit test suite
 ```

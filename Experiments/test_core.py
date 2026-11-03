@@ -1,4 +1,10 @@
-"""Run with:  python -m unittest discover Experiments"""
+"""Unit test suite for the OOP Agent-Environment Dungeon Warden architecture (20x20 maps).
+
+Run with:
+    python -m unittest discover Experiments -v
+"""
+from __future__ import annotations
+
 from pathlib import Path
 import random
 import sys
@@ -8,176 +14,205 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from DungeonWarden.ai.bots import BOTS  # noqa: E402
-from DungeonWarden.ai.kb import KnowledgeBase, is_valid  # noqa: E402
-from DungeonWarden.ai.search import astar, bfs_distances  # noqa: E402
-from DungeonWarden.ai.warden import WARDENS  # noqa: E402
-from DungeonWarden.core.engine import Match  # noqa: E402
-from DungeonWarden.core.mapgen import random_map, route_count  # noqa: E402
-from DungeonWarden.core.settings import (  # noqa: E402
-    DIFFICULTIES, game_settings, load_balance, map_key, map_paths,
-)
-from DungeonWarden.core.world import (  # noqa: E402
-    DungeonMap, State, apply, initial_state, next_turn, preconditions, sense,
-)
+from DungeonWarden.ai.knowledge_base import FOL_RULES, ActionValidator, KnowledgeBase  # noqa: E402
+from DungeonWarden.ai.pathfinder import Pathfinder  # noqa: E402
+from DungeonWarden.ai.player_bots import BOTS  # noqa: E402
+from DungeonWarden.ai.wardens import WARDENS  # noqa: E402
+from DungeonWarden.core.action_schema import StripsActionSchema  # noqa: E402
+from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
+from DungeonWarden.core.game_state import GameState  # noqa: E402
+from DungeonWarden.core.map_generator import MapGenerator, RouteAnalyzer  # noqa: E402
+from DungeonWarden.core.match_engine import MatchEngine  # noqa: E402
+from DungeonWarden.core.sensor_system import SensorSystem  # noqa: E402
+from DungeonWarden.core.settings import DIFFICULTIES, SettingsManager  # noqa: E402
 
-MAPS = [DungeonMap.load(p) for p in map_paths()]
+MAPS = [DungeonMap.load(p) for p in SettingsManager.map_paths()]
 
 
-def play_out(m, warden, bot, seed, **kw):
-    g = Match(m, warden, seed=seed, check_astar=True, **kw)
-    b = BOTS[bot](seed)
-    while not g.winner:
-        g.step(b.move(g))
-    return g
+def play_out(dmap: DungeonMap, warden: str, bot: str, seed: int, **kwargs) -> MatchEngine:
+    """Helper to run a complete headless match to completion."""
+    match = MatchEngine(dmap, warden, seed=seed, check_astar=True, **kwargs)
+    bot_agent = BOTS[bot](seed)
+    while not match.winner:
+        match.step(bot_agent.move(match))
+    return match
 
 
 class MapTests(unittest.TestCase):
-    def test_maps_load_and_are_solvable(self):
+    """Verify 20x20 map models, route diversity, and difficulty calibration."""
+
+    def test_maps_load_and_are_solvable(self) -> None:
         self.assertEqual(len(MAPS), 3)
         for m in MAPS:
             self.assertEqual((m.w, m.h), (20, 20), m.name)
-            self.assertIn(m.treasure, bfs_distances(m.start, m, m.walls), m.name)
+            self.assertIn(m.treasure, Pathfinder.bfs_distances(m.start, m, m.walls), m.name)
 
-    def test_maps_have_many_routes(self):
-        """The player needs room to improvise: several routes sharing no cell, some without doors
-        (so locks can never cut everything). 20x20 maps need at least 4 routes (2 door-free)."""
+    def test_maps_have_many_routes(self) -> None:
         for m in MAPS:
-            self.assertGreaterEqual(route_count(m), 4, m.name)
-            self.assertGreaterEqual(route_count(m, doors_open=False), 2, m.name)
+            self.assertGreaterEqual(RouteAnalyzer.count_disjoint_routes(m), 4, m.name)
+            self.assertGreaterEqual(
+                RouteAnalyzer.count_disjoint_routes(m, doors_open=False), 2, m.name
+            )
 
-    def test_route_count(self):
+    def test_route_count(self) -> None:
         corridor = DungeonMap(["P.T"])
-        self.assertEqual(route_count(corridor), 1)
-        ring = DungeonMap(["P..", ".#.", "..T"])       # two ways round the wall
-        self.assertEqual(route_count(ring), 2)
+        self.assertEqual(RouteAnalyzer.count_disjoint_routes(corridor), 1)
+        ring = DungeonMap(["P..", ".#.", "..T"])
+        self.assertEqual(RouteAnalyzer.count_disjoint_routes(ring), 2)
         gated = DungeonMap(["PDT", "...", "..."])
-        self.assertEqual(route_count(gated, doors_open=False), 1)    # only the open row below counts
-        self.assertGreaterEqual(route_count(gated), 2)
+        self.assertEqual(RouteAnalyzer.count_disjoint_routes(gated, doors_open=False), 1)
+        self.assertGreaterEqual(RouteAnalyzer.count_disjoint_routes(gated), 2)
 
-    def test_every_map_is_calibrated(self):
-        balance = load_balance()
-        for p in map_paths():
-            self.assertIn(map_key(p), balance, f"run calibrate.py: {p} has no turn limits")
-            t = balance[map_key(p)]
-            self.assertTrue(t["easy"] > t["normal"] > t["hard"], f"{p}: difficulties must differ: {t}")
+    def test_every_map_is_calibrated(self) -> None:
+        balance = SettingsManager.load_balance()
+        for p in SettingsManager.map_paths():
+            key = SettingsManager.map_key(p)
+            self.assertIn(key, balance, f"run calibrate.py: {p} has no turn limits")
+            t = balance[key]
+            self.assertTrue(t["easy"] > t["normal"] > t["hard"], f"{p}: {t}")
 
-    def test_bad_map_rejected(self):
+    def test_bad_map_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            DungeonMap(["P..", "..."])          # no treasure
+            DungeonMap(["P..", "..."])
         with self.assertRaises(ValueError):
-            DungeonMap(["P.T", ".."])           # ragged rows
+            DungeonMap(["P.T", ".."])
         with self.assertRaises(ValueError):
-            DungeonMap(["P?T"])                 # unknown tile
+            DungeonMap(["P?T"])
 
 
 class SearchTests(unittest.TestCase):
-    def test_astar_matches_bfs(self):
-        """Completeness and optimality: A* finds a path iff BFS does, with the same length."""
+    """Verify A* completeness and optimality against BFS ground truth."""
+
+    def test_astar_matches_bfs(self) -> None:
         rng = random.Random(7)
         for n in (8, 12, 20):
             for k in range(5):
-                m = random_map(n, seed=k)
+                m = MapGenerator.generate_random_map(n, seed=k)
                 cells = [c for c in m.cells if c not in m.walls]
                 for _ in range(40):
                     a, b = rng.choice(cells), rng.choice(cells)
-                    path, _ = astar(a, b, m, m.walls)
-                    d = bfs_distances(a, m, m.walls).get(b)
+                    path, _ = Pathfinder.astar(a, b, m, m.walls)
+                    d = Pathfinder.bfs_distances(a, m, m.walls).get(b)
                     if d is None:
                         self.assertIsNone(path)
                     else:
+                        assert path is not None
                         self.assertEqual(len(path) - 1, d)
-                        self.assertTrue(all(abs(p[0] - q[0]) + abs(p[1] - q[1]) == 1 for p, q in zip(path, path[1:])))
+                        self.assertTrue(
+                            all(
+                                DungeonMap.manhattan(p, q) == 1
+                                for p, q in zip(path, path[1:])
+                            )
+                        )
 
 
 class KnowledgeBaseTests(unittest.TestCase):
-    def setUp(self):
-        self.m = DungeonMap([
-            "P....",
-            ".##D.",
-            ".#o..",
-            "E#..T",
-        ])
-        self.s = initial_state(self.m)
+    """Verify First-Order Logic rules R1-R4 and Valid(a)."""
 
-    def test_plate_pins_player(self):
+    def setUp(self) -> None:
+        self.m = DungeonMap(["P....", ".##D.", ".#o..", "E#..T"])
+        self.s = GameState.create_initial(self.m)
+
+    def test_plate_pins_player(self) -> None:
         kb = KnowledgeBase(self.m, (3, 2))
-        kb.update(sense(self.m, self.s, (3, 2), (2, 2)), self.s)
+        kb.update(SensorSystem.sense(self.m, self.s, (3, 2), (2, 2)), self.s)
         self.assertEqual(kb.belief, {(2, 2)})
 
-    def test_r2_player_must_move(self):
+    def test_r2_player_must_move(self) -> None:
         kb = KnowledgeBase(self.m, (3, 2))
-        kb.update(sense(self.m, self.s, (3, 2), (4, 2)), self.s)
-        self.assertNotIn((3, 2), kb.belief)      # staying put is not Connected
+        kb.update(SensorSystem.sense(self.m, self.s, (3, 2), (4, 2)), self.s)
+        self.assertNotIn((3, 2), kb.belief)
         self.assertIn((4, 2), kb.belief)
 
-    def test_only_proposal_rules(self):
-        from DungeonWarden.ai.kb import RULES
-        self.assertEqual(list(RULES), ["R1", "R2", "R3", "R4", "V"])
+    def test_only_proposal_rules(self) -> None:
+        self.assertEqual(list(FOL_RULES), ["R1", "R2", "R3", "R4", "V"])
 
-    def test_noise_keeps_cells_next_to_door(self):
+    def test_noise_keeps_cells_next_to_door(self) -> None:
         kb = KnowledgeBase(self.m, (4, 1))
-        kb.update(sense(self.m, self.s, (4, 1), (3, 1)), self.s)   # step onto the door
-        self.assertTrue(all(abs(c[0] - 3) + abs(c[1] - 1) <= 1 for c in kb.belief))
+        kb.update(SensorSystem.sense(self.m, self.s, (4, 1), (3, 1)), self.s)
+        self.assertTrue(all(DungeonMap.manhattan(c, (3, 1)) <= 1 for c in kb.belief))
         self.assertIn((3, 1), kb.belief)
 
-    def test_eye_sight_rule(self):
-        """R3 removes watched cells where the player is not seen; the seen cell stays."""
+    def test_eye_sight_rule(self) -> None:
         kb = KnowledgeBase(self.m, (0, 1))
-        p = sense(self.m, self.s, (0, 1), (0, 2))
+        p = SensorSystem.sense(self.m, self.s, (0, 1), (0, 2))
         kb.update(p, self.s)
         self.assertIn((0, 2), kb.belief)
         self.assertFalse((kb.belief & p.sight) - {(0, 2)})
 
-    def test_valid_rejects_trapping_and_disconnecting(self):
+    def test_valid_rejects_trapping_and_disconnecting(self) -> None:
         belief = {(4, 0)}
-        self.assertEqual(is_valid(self.m, self.s, ("PlaceWall", (4, 0)), belief, 10), "player may be on that cell")
-        # walling (4,2) leaves the route through (3,2); walling both disconnects the treasure
-        s2 = apply(self.s, ("PlaceWall", (4, 2)))
-        s2 = State(s2.walls, s2.locked, 10, 0)
-        self.assertEqual(is_valid(self.m, s2, ("PlaceWall", (3, 2)), belief, 10), "treasure would become unreachable")
+        self.assertEqual(
+            ActionValidator.validate(self.m, self.s, ("PlaceWall", (4, 0)), belief, 10),
+            "player may be on that cell",
+        )
+        s2 = StripsActionSchema.apply_effects(self.s, ("PlaceWall", (4, 2)))
+        s2 = GameState(s2.walls, s2.locked, 10, 0)
+        self.assertEqual(
+            ActionValidator.validate(self.m, s2, ("PlaceWall", (3, 2)), belief, 10),
+            "treasure would become unreachable",
+        )
 
 
 class ProposalRulesTests(unittest.TestCase):
-    """The rules must be exactly Table 2.1.1 of the proposal."""
+    """Verify STRIPS action schema preconditions, effects, and turn timer."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.m = MAPS[0]
-        self.s = State(self.m.walls, frozenset(), 6, 0)
+        self.s = GameState(self.m.walls, frozenset(), 6, 0)
         self.door = sorted(self.m.doors)[0]
         self.floor = next(c for c in self.m.cells if self.m.is_plain_floor(c))
 
-    def test_action_schema(self):
-        self.assertEqual(apply(self.s, ("LockDoor", self.door)).energy, 4)
-        self.assertEqual(apply(self.s, ("PlaceWall", self.floor)).energy, 3)
-        self.assertEqual(apply(self.s, ("Wait", None)).energy, 7)
-        locked = apply(self.s, ("LockDoor", self.door))
-        self.assertEqual(apply(locked, ("UnlockDoor", self.door)).energy, 5)
-        self.assertEqual(preconditions(self.m, State(self.m.walls, frozenset(), 1, 0), ("LockDoor", self.door)),
-                         "not enough energy")
-        self.assertEqual(preconditions(self.m, State(self.m.walls, frozenset(), 2, 0), ("PlaceWall", self.floor)),
-                         "not enough energy")
+    def test_action_schema(self) -> None:
+        self.assertEqual(
+            StripsActionSchema.apply_effects(self.s, ("LockDoor", self.door)).energy, 4
+        )
+        self.assertEqual(
+            StripsActionSchema.apply_effects(self.s, ("PlaceWall", self.floor)).energy, 3
+        )
+        self.assertEqual(
+            StripsActionSchema.apply_effects(self.s, ("Wait", None)).energy, 7
+        )
+        locked = StripsActionSchema.apply_effects(self.s, ("LockDoor", self.door))
+        self.assertEqual(
+            StripsActionSchema.apply_effects(locked, ("UnlockDoor", self.door)).energy, 5
+        )
+        self.assertEqual(
+            StripsActionSchema.check_preconditions(
+                self.m, GameState(self.m.walls, frozenset(), 1, 0), ("LockDoor", self.door)
+            ),
+            "not enough energy",
+        )
+        self.assertEqual(
+            StripsActionSchema.check_preconditions(
+                self.m, GameState(self.m.walls, frozenset(), 2, 0), ("PlaceWall", self.floor)
+            ),
+            "not enough energy",
+        )
 
-    def test_locks_stay_and_no_cooldown(self):
-        s = apply(self.s, ("PlaceWall", self.floor))
-        self.assertIsNone(preconditions(self.m, s, ("LockDoor", self.door)))
-        s = apply(s, ("LockDoor", self.door))
+    def test_locks_stay_and_no_cooldown(self) -> None:
+        s = StripsActionSchema.apply_effects(self.s, ("PlaceWall", self.floor))
+        self.assertIsNone(
+            StripsActionSchema.check_preconditions(self.m, s, ("LockDoor", self.door))
+        )
+        s = StripsActionSchema.apply_effects(s, ("LockDoor", self.door))
         for _ in range(50):
-            s = next_turn(s)
+            s = s.next_turn()
         self.assertIn(self.door, s.blocked)
 
-    def test_turn_limit(self):
-        self.assertEqual(Match(self.m).T, 120)
-        g = Match(self.m, "W0", T=3)
-        self.assertFalse(g.step("wait"))          # the player must move every turn
+    def test_turn_limit(self) -> None:
+        self.assertEqual(MatchEngine(self.m).T, 120)
+        g = MatchEngine(self.m, "W0", T=3)
+        self.assertFalse(g.step("wait"))
         for _ in range(3):
             self.assertTrue(g.step(g.legal_moves()[0][0]))
         self.assertEqual(g.winner, "warden")
 
 
 class GameTests(unittest.TestCase):
-    def test_every_warden_is_fair_and_sound(self):
-        """Over all 20x20 maps and Wardens: true cell always in B_t (recall 100%), no invalid action, A* = BFS."""
+    """Verify full match execution, fairness, recall, and W2 superiority."""
+
+    def test_every_warden_is_fair_and_sound(self) -> None:
         for m in MAPS:
             for w in WARDENS:
                 for b in BOTS:
@@ -188,7 +223,7 @@ class GameTests(unittest.TestCase):
                     self.assertTrue(all(r.true_in_belief for r in g.records), tag)
                     self.assertTrue(all(r.astar_ok for r in g.records), tag)
 
-    def test_big_maps_are_fair_and_fast(self):
+    def test_big_maps_are_fair_and_fast(self) -> None:
         for m in MAPS:
             g = play_out(m, "W2", "rusher", 1, T=120)
             self.assertIsNotNone(g.winner, m.name)
@@ -196,27 +231,36 @@ class GameTests(unittest.TestCase):
             self.assertTrue(all(r.true_in_belief for r in g.records), m.name)
             self.assertLess(max(r.ms for r in g.records), 1000, m.name)
 
-    def test_illegal_move_uses_no_turn(self):
-        g = Match(MAPS[0])
-        self.assertFalse(g.step("wait"))      # the player must move; a refused move costs no turn
+    def test_illegal_move_uses_no_turn(self) -> None:
+        g = MatchEngine(MAPS[0])
+        self.assertFalse(g.step("wait"))
         self.assertFalse(g.step("nonsense"))
         self.assertEqual(g.state.turn, 0)
 
-    def test_full_warden_beats_baselines(self):
-        def extra_steps(w):
-            return sum(play_out(MAPS[i % 3], w, "rusher", 1000 + i, T=60).path_increase() for i in range(6))
+    def test_full_warden_beats_baselines(self) -> None:
+        def extra_steps(w: str) -> int:
+            return sum(
+                play_out(MAPS[i % 3], w, "rusher", 1000 + i, T=60).path_increase()
+                for i in range(6)
+            )
+
         w2 = extra_steps("W2")
         self.assertGreater(w2, extra_steps("W0"))
         self.assertGreaterEqual(w2, extra_steps("W1"))
 
-    def test_difficulty_settings(self):
-        m, path = MAPS[0], map_paths()[0]
-        shortest = Match(m).original_len
-        T = {d: game_settings(path, shortest, d)["T"] for d in DIFFICULTIES}
-        self.assertTrue(T["easy"] > T["normal"] > T["hard"] >= shortest, T)
-        self.assertEqual(game_settings("custom.txt", 10, "normal", balance={})["T"], 30)   # 3.0 x shortest
+    def test_difficulty_settings(self) -> None:
+        m, path = MAPS[0], SettingsManager.map_paths()[0]
+        shortest = MatchEngine(m).original_len
+        t_vals = {
+            d: SettingsManager.get_match_settings(path, shortest, d)["T"]
+            for d in DIFFICULTIES
+        }
+        self.assertTrue(t_vals["easy"] > t_vals["normal"] > t_vals["hard"] >= shortest, t_vals)
+        self.assertEqual(
+            SettingsManager.get_match_settings("custom.txt", 10, "normal", balance={})["T"],
+            30,
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
-
