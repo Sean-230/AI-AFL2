@@ -161,8 +161,9 @@ class OverlayView:
             tips = (
                 (
                     "1. Perhatikan Energi Warden",
-                    "Mengunci pintu membutuhkan 2 Energi dan mengangkat tembok membutuhkan 3 Energi. "
-                    "Saat energi Warden habis (< 2), ia harus beristirahat (+1 Energi). Gunakan momen itu untuk menerobos!",
+                    "Mengunci pintu dan mengangkat tembok membutuhkan Energi (biayanya tergantung tingkat kesulitan, "
+                    "lihat panel Status). Saat energi Warden tidak cukup, ia harus beristirahat (+1 Energi). "
+                    "Gunakan momen itu untuk menerobos!",
                 ),
                 (
                     "2. Hindari Pelat Jebakan & Area Mata Pengintai",

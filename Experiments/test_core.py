@@ -68,8 +68,7 @@ class MapTests(unittest.TestCase):
         for p in SettingsManager.map_paths():
             key = SettingsManager.map_key(p)
             self.assertIn(key, balance, f"run calibrate.py: {p} has no turn limits")
-            t = balance[key]
-            self.assertTrue(t["easy"] > t["normal"] > t["hard"], f"{p}: {t}")
+            self.assertGreater(balance[key]["T"], 0, f"{p}: {balance[key]}")
 
     def test_bad_map_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -190,6 +189,15 @@ class ProposalRulesTests(unittest.TestCase):
             "not enough energy",
         )
 
+    def test_action_costs_come_from_the_state(self) -> None:
+        dear = GameState.create_initial(self.m, 6, lock_cost=5, wall_cost=8)
+        self.assertEqual(
+            StripsActionSchema.check_preconditions(self.m, dear, ("PlaceWall", self.floor)), "not enough energy"
+        )   # 6 < 8
+        rich = GameState.create_initial(self.m, 10, lock_cost=5, wall_cost=8)
+        self.assertEqual(StripsActionSchema.apply_effects(rich, ("PlaceWall", self.floor)).energy, 2)
+        self.assertEqual(StripsActionSchema.apply_effects(rich, ("LockDoor", self.door)).energy, 5)
+
     def test_locks_stay_and_no_cooldown(self) -> None:
         s = StripsActionSchema.apply_effects(self.s, ("PlaceWall", self.floor))
         self.assertIsNone(
@@ -251,15 +259,26 @@ class GameTests(unittest.TestCase):
     def test_difficulty_settings(self) -> None:
         m, path = MAPS[0], SettingsManager.map_paths()[0]
         shortest = MatchEngine(m).original_len
-        t_vals = {
-            d: SettingsManager.get_match_settings(path, shortest, d)["T"]
-            for d in DIFFICULTIES
-        }
-        self.assertTrue(t_vals["easy"] > t_vals["normal"] > t_vals["hard"] >= shortest, t_vals)
+        cfg = {d: SettingsManager.get_match_settings(path, shortest, d) for d in DIFFICULTIES}
+        # difficulty is the Warden's action costs: T and energy are the same, easier = dearer blocks
+        self.assertEqual(len({c["T"] for c in cfg.values()}), 1)
+        self.assertEqual({(c["energy"], c["cap"]) for c in cfg.values()}, {(6, 10)})
+        self.assertTrue(cfg["easy"]["wall_cost"] > cfg["normal"]["wall_cost"] > cfg["hard"]["wall_cost"], cfg)
+        self.assertTrue(cfg["easy"]["lock_cost"] >= cfg["normal"]["lock_cost"] > cfg["hard"]["lock_cost"], cfg)
+        self.assertEqual((cfg["hard"]["lock_cost"], cfg["hard"]["wall_cost"]), (2, 3))   # Table 2.1.1
         self.assertEqual(
             SettingsManager.get_match_settings("custom.txt", 10, "normal", balance={})["T"],
-            30,
+            40,
         )
+
+    def test_difficulty_costs_apply_in_a_match(self) -> None:
+        """The costs of the difficulty are really charged, and the Warden still never plays an invalid action."""
+        m, path = MAPS[0], SettingsManager.map_paths()[0]
+        cfg = SettingsManager.get_match_settings(path, MatchEngine(m).original_len, "easy")
+        game = play_out(m, "W2", "rusher", 1, **cfg)
+        self.assertEqual((game.state.lock_cost, game.state.wall_cost), (cfg["lock_cost"], cfg["wall_cost"]))
+        self.assertEqual(game.invalid, 0)
+        self.assertTrue(all(r.true_in_belief for r in game.records))
 
 
 if __name__ == "__main__":

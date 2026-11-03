@@ -27,6 +27,7 @@ def execute_single_match(job: dict) -> tuple[dict, list[dict]]:
         cap=job["cap"],
         seed=job["seed"],
         check_astar=True,
+        **{k: job[k] for k in ("lock_cost", "wall_cost") if k in job},
     )
     bot = BOTS[job["bot"]](job["seed"])
     while not match.winner:

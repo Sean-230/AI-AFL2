@@ -136,7 +136,7 @@ PRACTICE_STEPS: tuple[PracticeStep, ...] = (
             TutorialFeature(
                 icon="energy",
                 title="Perhatikan Energi Penjaga",
-                desc="Kunci pintu butuh 2 Energi & tembok butuh 3 Energi. Jika habis, Penjaga harus rehat (+1 Energi).",
+                desc="Kunci pintu & tembok butuh Energi (lihat panel Status). Jika tidak cukup, Penjaga harus rehat (+1 Energi).",
             ),
             TutorialFeature(
                 icon="player",

@@ -1,27 +1,20 @@
 {
   "catacombs": {
-    "easy": 123,
-    "easy_win": 47,
-    "normal": 120,
-    "normal_win": 30,
-    "hard": 112,
-    "hard_win": 13
+    "T": 120,
+    "easy_win": 90,
+    "normal_win": 35,
+    "hard_win": 25
   },
   "fortress": {
-    "easy": 124,
-    "easy_win": 50,
-    "normal": 112,
-    "normal_win": 30,
-    "hard": 63,
-    "hard_win": 13
+    "T": 112,
+    "easy_win": 100,
+    "normal_win": 60,
+    "hard_win": 35
   },
   "labyrinth": {
-    "easy": 143,
-    "easy_win": 40,
-    "normal": 123,
-    "normal_win": 30,
-    "hard": 62,
-    "hard_win": 13
+    "T": 123,
+    "easy_win": 100,
+    "normal_win": 93,
+    "hard_win": 28
   }
 }
-

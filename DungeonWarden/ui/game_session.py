@@ -44,7 +44,7 @@ class GameSession:
         )
         if app.args.T:
             self.settings["T"] = app.args.T
-        for key in ("energy", "cap"):
+        for key in ("energy", "cap", "lock_cost", "wall_cost"):
             if getattr(app.args, key) is not None:
                 self.settings[key] = getattr(app.args, key)
 

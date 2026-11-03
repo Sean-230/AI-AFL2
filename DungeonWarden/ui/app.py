@@ -212,6 +212,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--T", type=int, help="override the turn limit T")
     parser.add_argument("--energy", type=int, help="override the Warden's starting energy")
     parser.add_argument("--cap", type=int, help="override the Warden's energy cap")
+    parser.add_argument("--lock-cost", type=int, help="override the energy cost of LockDoor")
+    parser.add_argument("--wall-cost", type=int, help="override the energy cost of PlaceWall")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--delay", type=int, default=300, help="ms between bot moves")
     parser.add_argument("--skip-menu", action="store_true", help="start the game straight away")

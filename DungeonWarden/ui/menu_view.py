@@ -109,13 +109,13 @@ class MenuView:
         settings = self.app.preview_settings()
         shortest = self.app.preview_shortest()
         diff_desc = {
-            "easy": "Mode santai dengan batas langkah longgar. Cocok untuk mempelajari pola penjaga ruang bawah tanah.",
-            "normal": "Tantangan seimbang. Perhatikan pintu dan kelola rute perjalananmu dengan cermat!",
-            "hard": "Batas langkah sangat ketat! Salah memilih jalur akan membuatmu kehabisan waktu.",
+            "easy": "Mengunci pintu dan memasang tembok sangat mahal bagi penjaga, jadi ia jarang bisa menghalangimu.",
+            "normal": "Blokir penjaga cukup mahal, jadi ia harus memilih kapan menghalangimu.",
+            "hard": "Biaya blokir standar proposal. Penjaga sering menghalangi, pilih jalurmu dengan cermat!",
         }.get(cfg["difficulty"], "")
         return [
             f"Ukuran Peta: {dmap.w}x{dmap.h}  •  Jarak Terdekat: {shortest} langkah  •  Pintu: {len(dmap.doors)} buah",
-            f"Batas Maksimal Langkah: {settings['T']} langkah  •  Energi Awal Penjaga: {settings['energy']}/{settings['cap']}",
+            f"Batas Maksimal Langkah: {settings['T']} langkah  •  Biaya Penjaga: Kunci Pintu {settings['lock_cost']} • Tembok {settings['wall_cost']} Energi",
             diff_desc,
         ]
 

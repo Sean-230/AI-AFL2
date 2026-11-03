@@ -9,7 +9,7 @@ from DungeonWarden.core.action_schema import WAIT_ACTION, Action, StripsActionSc
 from DungeonWarden.core.dungeon_map import MOVES, Cell, DungeonMap
 from DungeonWarden.core.game_state import GameState, Percept, TurnRecord
 from DungeonWarden.core.sensor_system import SensorSystem
-from DungeonWarden.core.settings import ENERGY_CAP, ENERGY_START, T_DEFAULT
+from DungeonWarden.core.settings import ENERGY_CAP, ENERGY_START, LOCK_COST, T_DEFAULT, WALL_COST
 
 
 class MatchEngine:
@@ -24,11 +24,13 @@ class MatchEngine:
         cap: int = ENERGY_CAP,
         seed: int = 0,
         check_astar: bool = False,
+        lock_cost: int = LOCK_COST,
+        wall_cost: int = WALL_COST,
     ) -> None:
         self.dmap = dmap
         self.cap = cap
         self.T = T
-        self.state = GameState.create_initial(dmap, min(energy, cap))
+        self.state = GameState.create_initial(dmap, min(energy, cap), lock_cost, wall_cost)
         self.player: Cell = dmap.start
         self.kb = KnowledgeBase(dmap, dmap.start)
         self.warden = WARDENS[warden](dmap, cap, seed)

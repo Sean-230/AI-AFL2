@@ -44,9 +44,9 @@ AI-AFL2/
     ├── runner.py                 # SimulationRunner (parallel multiprocessing execution)
     ├── metrics.py                # MetricsAggregator & ReportWriter (statistics, CSV, console tables)
     ├── plotter.py                # ExperimentPlotter (Matplotlib chart generation)
-    ├── calibrate.py              # DifficultyCalibrator (turn-limit T calibration per difficulty)
+    ├── calibrate.py              # DifficultyCalibrator (turn limit T per map, checks the cost-based difficulties)
     ├── test_core.py              # Unit test suite (20 tests verifying Core & AI classes)
-    └── results/                  # CSV metrics and PNG charts (20x20-normal/, scaling/)
+    └── results/                  # CSV metrics and PNG charts (20x20-hard/, scaling/)
 ```
 
 ## Setup
@@ -68,8 +68,28 @@ Command-line options skip the menu or set the proposal's input settings (`T`, `e
 ```bash
 python DungeonWarden/main.py --skip-menu --map fortress --difficulty hard
 python DungeonWarden/main.py --skip-menu --bot rusher
-python DungeonWarden/main.py --T 90 --energy 6 --cap 10 --seed 7
+python DungeonWarden/main.py --T 90 --energy 6 --cap 10 --lock-cost 2 --wall-cost 3 --seed 7
 ```
+
+## Difficulty
+
+Difficulty is the **energy price of the Warden's two blocking actions**. Hard uses the proposal's costs (Table 2.1.1); the easier levels make `LockDoor` and `PlaceWall` more expensive. The Warden regains only 1 energy per turn (and `Wait` is its only way to do so), so a dearer action simply means fewer blocks: a wall that costs 8 can be placed about once every 9 turns. Energy start/cap stay at 6/10 and the turn limit `T` is the same for every difficulty.
+
+| Difficulty | LockDoor | PlaceWall | Player win rate vs W2 (average of the 3 maps) |
+|---|---|---|---|
+| **Easy** | 5 energy | 8 energy | 97% |
+| **Normal** | 3 energy | 5 energy | 63% |
+| **Hard** | 2 energy | 3 energy (proposal) | 29% |
+
+| Map | T | Easy | Normal | Hard |
+|---|---|---|---|---|
+| Catacombs | 120 | 90% | 35% | 25% |
+| Fortress | 112 | 100% | 60% | 35% |
+| Labyrinth | 123 | 100% | 93% | 28% |
+
+Each cell is 60 games (both simulated players), so it is accurate to about ±12 points. Normal differs a lot between maps: Labyrinth is almost as easy as Easy, Catacombs is close to Hard.
+
+`T` is calibrated per map at the Hard costs so that the simulated players win about 30% of the time, which is the proposal's default setting and the one used by the experiments. The exact win rate of every map and difficulty is stored in `DungeonWarden/maps/balance.json`. The numbers come from greedy bots, so humans will usually do worse. To try other costs: `--lock-cost` and `--wall-cost`.
 
 ## Experiments & Unit Tests (Proposal Section 2.2)
 
@@ -78,5 +98,6 @@ python Experiments/experiment.py                  # 4 Wardens x 2 players x 200 
 python Experiments/experiment.py --difficulty hard
 python Experiments/experiment.py --scaling        # W2 time and nodes per move on random 8x8 .. 20x20 maps
 python Experiments/calibrate.py                   # recompute DungeonWarden/maps/balance.json
+python Experiments/calibrate.py --verify          # re-measure the three difficulties at the saved T
 python -m unittest discover Experiments -v        # run unit test suite
 ```

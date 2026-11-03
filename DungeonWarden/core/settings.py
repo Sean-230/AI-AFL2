@@ -1,4 +1,11 @@
-"""Application configuration, difficulty presets, and 20x20 map path management."""
+"""Application configuration, difficulty presets, and 20x20 map path management.
+
+Difficulty is the Warden's action costs (energy is an input setting of the proposal, Table 2.1.1 gives
+the default costs). Hard uses the proposal's costs; the easier levels make LockDoor and PlaceWall more
+expensive. The Warden regains only 1 energy per turn, so a dearer action means fewer blocks:
+a wall that costs 6 can only be placed about once every 7 turns. Energy start/cap stay at 6/10 and the
+turn limit T is the same for every difficulty (maps/balance.json).
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,22 +29,24 @@ WALL_COST = 3
 
 @dataclass(frozen=True)
 class Difficulty:
-    """Represents a game difficulty level and its target player win rate."""
+    """A difficulty level: what the Warden's two blocking actions cost in energy."""
 
     key: str
     label: str
-    target_win_rate: int
-    fallback_factor: float
+    lock_cost: int
+    wall_cost: int
+    target_win_rate: int    # expected win rate of the simulated players against W2 (calibrate.py checks it)
 
 
 DIFFICULTIES: dict[str, Difficulty] = {
     d.key: d
     for d in (
-        Difficulty("easy", "Easy", 50, 4.0),
-        Difficulty("normal", "Normal", 30, 3.0),
-        Difficulty("hard", "Hard", 15, 2.5),
+        Difficulty("easy", "Easy", 5, 8, 90),
+        Difficulty("normal", "Normal", 3, 5, 60),
+        Difficulty("hard", "Hard", LOCK_COST, WALL_COST, 30),
     )
 }
+FALLBACK_T_FACTOR = 4.0   # T = factor x shortest path for maps that aren't calibrated yet
 
 
 class SettingsManager:
@@ -55,7 +64,7 @@ class SettingsManager:
 
     @staticmethod
     def load_balance() -> dict[str, dict[str, int]]:
-        """Load calibrated turn limits (T) per map and difficulty from balance.json."""
+        """Load the calibrated turn limit T per map from balance.json."""
         try:
             return json.loads(BALANCE_FILE.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
@@ -71,13 +80,13 @@ class SettingsManager:
     ) -> dict[str, int]:
         """Compute match parameters (T, energy, cap) for a map at a chosen difficulty."""
         bal = cls.load_balance() if balance is None else balance
-        key = cls.map_key(path)
-        table = bal.get(key) or bal.get(f"20x20/{key}", {})
-        diff_cfg = DIFFICULTIES[difficulty]
-        turn_limit = table.get(difficulty) or math.ceil(diff_cfg.fallback_factor * shortest_path)
+        table = bal.get(cls.map_key(path), {})
+        diff = DIFFICULTIES[difficulty]
         return {
-            "T": turn_limit,
+            "T": table.get("T") or math.ceil(FALLBACK_T_FACTOR * shortest_path),
             "energy": ENERGY_START,
             "cap": ENERGY_CAP,
+            "lock_cost": diff.lock_cost,
+            "wall_cost": diff.wall_cost,
         }
 

@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from DungeonWarden.core.dungeon_map import Cell, DungeonMap
 from DungeonWarden.core.game_state import GameState
-from DungeonWarden.core.settings import ENERGY_CAP, LOCK_COST, WALL_COST
+from DungeonWarden.core.settings import ENERGY_CAP
 
 Action = tuple[str, Cell | None]
 WAIT_ACTION: Action = ("Wait", None)
@@ -23,12 +23,12 @@ class StripsActionSchema:
                 return "not a door"
             if cell in state.locked:
                 return "already locked"
-            if state.energy < LOCK_COST:
+            if state.energy < state.lock_cost:
                 return "not enough energy"
         elif kind == "PlaceWall":
             if cell is None or not dmap.is_plain_floor(cell) or cell in state.walls:
                 return "cell is not empty floor"
-            if state.energy < WALL_COST:
+            if state.energy < state.wall_cost:
                 return "not enough energy"
         elif kind == "UnlockDoor":
             if cell not in state.locked:
@@ -45,13 +45,13 @@ class StripsActionSchema:
             return replace(
                 state,
                 locked=state.locked | {cell},
-                energy=state.energy - LOCK_COST,
+                energy=state.energy - state.lock_cost,
             )
         if kind == "PlaceWall" and cell is not None:
             return replace(
                 state,
                 walls=state.walls | {cell},
-                energy=state.energy - WALL_COST,
+                energy=state.energy - state.wall_cost,
             )
         if kind == "UnlockDoor" and cell is not None:
             return replace(

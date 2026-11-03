@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import pygame
 
 from DungeonWarden.ai.pathfinder import Pathfinder
-from DungeonWarden.core.settings import LOCK_COST, WALL_COST
 from DungeonWarden.ui.menu_view import format_difficulty, format_map_name
 from DungeonWarden.ui.theme import (
     COLORS,
@@ -137,7 +136,7 @@ class ReasoningPanelView:
         Theme.blit_text(
             surf,
             theme.f_s,
-            f"Kunci Pintu: {LOCK_COST} Energi   •   Tembok Bata: {WALL_COST} Energi   •   Rehat: +1 Energi",
+            f"Kunci Pintu: {st.lock_cost} Energi   •   Tembok Bata: {st.wall_cost} Energi   •   Rehat: +1 Energi",
             "dim",
             (px, y),
         )
@@ -201,7 +200,7 @@ class ReasoningPanelView:
         y += 8
         tip = (
             "Tips: Hindari pelat jebakan & area pantau biru agar Penjaga tidak melacakmu. "
-            "Terobos lorong saat energi Penjaga di bawah 2!"
+            f"Terobos lorong saat energi Penjaga di bawah {min(st.lock_cost, st.wall_cost)}!"
         )
         for line in Theme.wrap_text(tip, theme.f_s, pw)[:2]:
             Theme.blit_text(surf, theme.f_s, line, "good", (px, y))

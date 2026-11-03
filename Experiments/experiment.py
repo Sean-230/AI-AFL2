@@ -60,13 +60,13 @@ class ExperimentController:
             cfg = SettingsManager.get_match_settings(
                 path, MatchEngine(dmap).original_len, args.difficulty
             )
-            for key in ("T", "energy", "cap"):
+            for key in ("T", "energy", "cap", "lock_cost", "wall_cost"):
                 if getattr(args, key) is not None:
                     cfg[key] = getattr(args, key)
             setups.append((dmap, cfg))
             print(
                 f"  {dmap.name:<10} {dmap.w}x{dmap.h}  T={cfg['T']}  "
-                f"energy {cfg['energy']}/{cfg['cap']}"
+                f"energy {cfg['energy']}/{cfg['cap']}  lock {cfg['lock_cost']}e  wall {cfg['wall_cost']}e"
             )
 
         jobs = [
@@ -143,12 +143,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Dungeon Warden 20x20 experiments")
     ap.add_argument("--games", type=int, default=200, help="games per (Warden, bot) pair")
     ap.add_argument("--maps", nargs="+", help="explicit map files instead of all 20x20 maps")
-    ap.add_argument("--difficulty", default="normal", choices=list(DIFFICULTIES))
+    ap.add_argument("--difficulty", default="hard", choices=list(DIFFICULTIES),
+                    help="Warden action costs: hard = the proposal's 2/3 (default), easy/normal = dearer")
     ap.add_argument("--wardens", nargs="+", default=sorted(WARDENS), choices=sorted(WARDENS))
     ap.add_argument("--bots", nargs="+", default=sorted(BOTS), choices=sorted(BOTS))
     ap.add_argument("--T", type=int, help="override the turn limit for every map")
     ap.add_argument("--energy", type=int, help="override starting energy")
     ap.add_argument("--cap", type=int, help="override energy cap")
+    ap.add_argument("--lock-cost", type=int, help="override the energy cost of LockDoor")
+    ap.add_argument("--wall-cost", type=int, help="override the energy cost of PlaceWall")
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--out", help="output folder")
