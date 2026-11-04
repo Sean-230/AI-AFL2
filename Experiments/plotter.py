@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from DungeonWarden.ai.wardens import WARDENS
+from Experiments.evaluation_wardens import WARDENS
 
 SERIES_COLORS: dict[str, str] = {
     "W0": "#2a78d6",

@@ -20,10 +20,10 @@ ROOT = HERE.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from DungeonWarden.ai.player_bots import BOTS  # noqa: E402
 from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
 from DungeonWarden.core.match_engine import MatchEngine  # noqa: E402
 from DungeonWarden.core.settings import BALANCE_FILE, DIFFICULTIES, SettingsManager  # noqa: E402
+from Experiments.player_bots import BOTS  # noqa: E402
 
 SCAN_FACTORS = (1.2, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0)
 REFERENCE = DIFFICULTIES["hard"]   # the proposal's default costs, T is calibrated against them
@@ -38,7 +38,7 @@ def _measure_win_rate(
     for i in range(games):
         for bot_key in BOTS:
             match = MatchEngine(
-                dmap, "W2", T=turn_limit, seed=seed + i, lock_cost=lock_cost, wall_cost=wall_cost
+                dmap, T=turn_limit, seed=seed + i, lock_cost=lock_cost, wall_cost=wall_cost
             )
             bot = BOTS[bot_key](seed + i)
             while not match.winner:

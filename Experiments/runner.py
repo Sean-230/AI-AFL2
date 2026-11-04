@@ -11,9 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from DungeonWarden.ai.player_bots import BOTS  # noqa: E402
 from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
 from DungeonWarden.core.match_engine import MatchEngine  # noqa: E402
+from Experiments.evaluation_wardens import WARDENS  # noqa: E402
+from Experiments.player_bots import BOTS  # noqa: E402
 
 
 def execute_single_match(job: dict) -> tuple[dict, list[dict]]:
@@ -21,7 +22,7 @@ def execute_single_match(job: dict) -> tuple[dict, list[dict]]:
     dmap: DungeonMap = job["dmap"]
     match = MatchEngine(
         dmap,
-        warden=job["warden"],
+        warden=WARDENS[job["warden"]],
         T=job["T"],
         energy=job["energy"],
         cap=job["cap"],

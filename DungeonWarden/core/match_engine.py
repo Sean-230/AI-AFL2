@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from DungeonWarden.ai.knowledge_base import KnowledgeBase
 from DungeonWarden.ai.pathfinder import Pathfinder
-from DungeonWarden.ai.warden_base import Decision
-from DungeonWarden.ai.wardens import WARDENS
+from DungeonWarden.ai.warden_base import BaseWarden, Decision
+from DungeonWarden.ai.wardens import MinimaxWarden
 from DungeonWarden.core.action_schema import WAIT_ACTION, Action, StripsActionSchema
 from DungeonWarden.core.dungeon_map import MOVES, Cell, DungeonMap
 from DungeonWarden.core.game_state import GameState, Percept, TurnRecord
@@ -18,7 +18,7 @@ class MatchEngine:
     def __init__(
         self,
         dmap: DungeonMap,
-        warden: str = "W2",
+        warden: type[BaseWarden] = MinimaxWarden,
         T: int = T_DEFAULT,
         energy: int = ENERGY_START,
         cap: int = ENERGY_CAP,
@@ -33,7 +33,7 @@ class MatchEngine:
         self.state = GameState.create_initial(dmap, min(energy, cap), lock_cost, wall_cost)
         self.player: Cell = dmap.start
         self.kb = KnowledgeBase(dmap, dmap.start)
-        self.warden = WARDENS[warden](dmap, cap, seed)
+        self.warden: BaseWarden = warden(dmap, cap, seed)
         self.check_astar = check_astar
         self.winner: str | None = None
         self.percept: Percept | None = None

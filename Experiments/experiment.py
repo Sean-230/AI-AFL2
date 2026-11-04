@@ -11,8 +11,6 @@ ROOT = HERE.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from DungeonWarden.ai.player_bots import BOTS  # noqa: E402
-from DungeonWarden.ai.wardens import WARDENS  # noqa: E402
 from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
 from DungeonWarden.core.map_generator import MapGenerator  # noqa: E402
 from DungeonWarden.core.match_engine import MatchEngine  # noqa: E402
@@ -23,7 +21,9 @@ from DungeonWarden.core.settings import (  # noqa: E402
     MAP_SIZE,
     SettingsManager,
 )
+from Experiments.evaluation_wardens import WARDENS  # noqa: E402
 from Experiments.metrics import MetricsAggregator, ReportWriter  # noqa: E402
+from Experiments.player_bots import BOTS  # noqa: E402
 from Experiments.plotter import ExperimentPlotter  # noqa: E402
 from Experiments.runner import SimulationRunner  # noqa: E402
 

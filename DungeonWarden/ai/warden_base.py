@@ -38,7 +38,7 @@ class BaseWarden(ABC):
 
     key: str = "W?"
     label: str = "Warden"
-    oracle: bool = False
+    oracle: bool = False    # True: the engine hands this Warden the true player cell (evaluation upper bound only)
 
     def __init__(self, dmap: DungeonMap, cap: int = ENERGY_CAP, seed: int = 0) -> None:
         self.dmap = dmap

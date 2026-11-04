@@ -144,10 +144,10 @@ class OverlayView:
             y += 28
             shortcuts = (
                 ("W, A, S, D / Panah", "Melangkah 1 petak (Atas, Kiri, Bawah, Kanan)"),
+                ("B", "Toggle Panel Penalaran AI (FOL & Minimax) + Belief B_t"),
                 ("T", "Membuka / menutup Tutorial Sambil Praktek"),
                 ("H", "Membuka / menutup layar Panduan ini"),
-                ("R", "Mengulang peta saat ini dari awal"),
-                ("Esc", "Membuka menu Jeda Permainan"),
+                ("R / Esc", "Mengulang peta dari awal / Menu Jeda"),
             )
             for key_label, desc in shortcuts:
                 Theme.blit_text(surf, theme.f_b, key_label, "text", (x1, y))

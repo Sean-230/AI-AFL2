@@ -107,8 +107,9 @@ class BoardView:
         reveal_sensors: bool,
         message: tuple[str, int],
         now_ms: int,
+        show_belief: bool = False,
     ) -> None:
-        """Render the board, dynamic objects, sensor preview, and legend."""
+        """Render the board, dynamic objects, sensor preview, belief overlay, and legend."""
         st, dm, s = match.state, self.dmap, self.cell
         pygame.draw.rect(surf, COLORS["line"], self.grid.inflate(10, 10), 5, border_radius=6)
         surf.blit(self.base_surface, self.grid.topleft)
@@ -129,6 +130,24 @@ class BoardView:
             self._draw_placed_wall(surf, c, now_ms)
         self._draw_treasure(surf, now_ms)
 
+        if show_belief and not match.winner:
+            pulse = 54 + int(28 * (0.5 + 0.5 * math.sin(now_ms / 260)))
+            for c in match.kb.belief:
+                self._tint_cell(surf, c, COLORS["belief"], pulse)
+            dec = match.decision
+            if dec is not None:
+                if len(dec.route) > 1:
+                    pts = [self.cell_center(c) for c in dec.route]
+                    pygame.draw.lines(surf, COLORS["assumed"], False, pts, 2)
+                if dec.assumed is not None:
+                    pygame.draw.rect(
+                        surf,
+                        COLORS["assumed"],
+                        self.cell_rect(dec.assumed, 2),
+                        2,
+                        border_radius=5,
+                    )
+
         px, py = int(player_px.x), int(player_px.y)
         glow = pygame.Surface((s * 2, s * 2), pygame.SRCALPHA)
         pygame.draw.circle(glow, (*COLORS["player"], 60), (s, s), int(s * 0.75))
@@ -142,7 +161,7 @@ class BoardView:
         surf.blit(self.light_surface, (px - lw // 2, py - lh // 2))
         surf.set_clip(prev_clip)
 
-        self._draw_legend(surf, message, now_ms)
+        self._draw_legend(surf, message, now_ms, show_belief=show_belief)
 
     def _tint_cell(
         self, surf: pygame.Surface, cell: Cell, color: tuple[int, int, int], alpha: int
@@ -212,20 +231,31 @@ class BoardView:
         surf: pygame.Surface,
         message: tuple[str, int],
         now_ms: int,
+        show_belief: bool = False,
     ) -> None:
         y = self.grid.bottom + 10
         msg_text, msg_at = message
         if msg_text and now_ms - msg_at < 1500:
             Theme.blit_text(surf, self.theme.f_b, msg_text, "bad", (self.grid.x, y))
             return
-        items = [
-            ("player", "kamu"),
-            ("treasure", "harta karun"),
-            ("placed", "tembok"),
-            ("locked", "pintu terkunci"),
-            ("plate", "pelat jebakan"),
-            ("eye", "mata & area pantau"),
-        ]
+        if show_belief:
+            items = [
+                ("player", "kamu"),
+                ("treasure", "harta"),
+                ("belief", "belief B_t"),
+                ("assumed", "asumsi & rute A*"),
+                ("plate", "jebakan"),
+                ("eye", "mata"),
+            ]
+        else:
+            items = [
+                ("player", "kamu"),
+                ("treasure", "harta karun"),
+                ("placed", "tembok"),
+                ("locked", "pintu terkunci"),
+                ("plate", "pelat jebakan"),
+                ("eye", "mata & area pantau"),
+            ]
         x = self.grid.x
         for key, label in items:
             if x + 16 + self.theme.f_s.size(label)[0] > PANEL_X - 12:

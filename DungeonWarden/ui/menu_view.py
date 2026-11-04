@@ -13,12 +13,6 @@ from DungeonWarden.ui.theme import COLORS, SCREEN_H, SCREEN_W, Theme
 if TYPE_CHECKING:
     from DungeonWarden.ui.app import DungeonWardenApp
 
-CONTROLLERS: dict[str, str] = {
-    "human": "Pemain (WASD)",
-    "rusher": "Rusher",
-    "cautious": "Cautious",
-}
-
 DIFFICULTY_LABELS: dict[str, str] = {
     "easy": "Mudah",
     "normal": "Normal",

@@ -67,7 +67,10 @@ class Theme:
             if mono
             else "segoeui,avenirnext,helveticaneue,arial,verdana"
         )
-        return pygame.font.SysFont(families, size, bold=bold)
+        try:
+            return pygame.font.SysFont(families, size, bold=bold)
+        except OSError:
+            return pygame.font.Font(None, size)
 
     @staticmethod
     def wrap_text(text: str, font_obj: pygame.font.Font, max_width: int) -> list[str]:

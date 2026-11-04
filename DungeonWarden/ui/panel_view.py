@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from DungeonWarden.ai.pathfinder import Pathfinder
+from DungeonWarden.core.action_schema import StripsActionSchema
 from DungeonWarden.ui.menu_view import format_difficulty, format_map_name
 from DungeonWarden.ui.theme import (
     COLORS,
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class ReasoningPanelView:
-    """Renders the top game header bar and clean right-hand player HUD cards."""
+    """Renders the top game header bar, clean player HUD cards, and live AI Reasoning cards."""
 
     def __init__(self, theme: Theme) -> None:
         self.theme = theme
@@ -33,6 +34,7 @@ class ReasoningPanelView:
         surf: pygame.Surface,
         match: "MatchEngine",
         difficulty: str,
+        show_belief: bool = False,
     ) -> None:
         """Render the top application header bar without overlapping chips and shortcuts."""
         theme = self.theme
@@ -43,24 +45,28 @@ class ReasoningPanelView:
             surf, theme.f_title, "DUNGEON WARDEN", "accent", (MARGIN, TOP_BAR_H // 2), "midleft"
         )
 
-        x = title_rect.right + 20
+        x = title_rect.right + 16
         diff_color = {"easy": "good", "normal": "accent", "hard": "bad"}[difficulty]
-        chips = (
+        chips: list[tuple[str, str]] = [
             (f"Peta: {format_map_name(dmap.name)}", "text"),
             (f"Kesulitan: {format_difficulty(difficulty)}", diff_color),
-        )
+        ]
+        if show_belief:
+            chips.append(("Otak AI (B): Aktif", "belief"))
+
         for label, color_key in chips:
             rendered = theme.f_s.render(label, True, COLORS[color_key])
-            chip = pygame.Rect(x, TOP_BAR_H // 2 - 14, rendered.get_width() + 22, 28)
+            chip = pygame.Rect(x, TOP_BAR_H // 2 - 14, rendered.get_width() + 20, 28)
             pygame.draw.rect(surf, COLORS["card"], chip, border_radius=14)
             pygame.draw.rect(surf, COLORS["line_hi"], chip, 1, border_radius=14)
             surf.blit(rendered, rendered.get_rect(center=chip.center))
-            x = chip.right + 10
+            x = chip.right + 8
 
+        shortcuts = "WASD: Jalan  •  B: Otak AI  •  T: Tutorial  •  H: Panduan  •  R: Ulangi  •  Esc: Menu"
         Theme.blit_text(
             surf,
             theme.f_s,
-            "WASD/Panah: Jalan  •  T: Tutorial  •  H: Panduan  •  R: Ulangi  •  Esc: Menu",
+            shortcuts,
             "dim",
             (SCREEN_W - MARGIN, TOP_BAR_H // 2),
             "midright",
@@ -72,13 +78,18 @@ class ReasoningPanelView:
         match: "MatchEngine",
         event_log: list[tuple[str, str]],
         tutorial_active: bool = False,
+        show_belief: bool = False,
     ) -> None:
-        """Render the player HUD panel on the right side without overlapping cards."""
+        """Render the right-side panel (either Player HUD or AI Reasoning View when B is toggled)."""
         self._draw_status_card(surf, match)
         if tutorial_active:
             return
-        self._draw_mission_card(surf, match)
-        self._draw_legend_card(surf)
+        if show_belief:
+            self._draw_kb_reasoning_card(surf, match)
+            self._draw_minimax_card(surf, match)
+        else:
+            self._draw_mission_card(surf, match)
+            self._draw_legend_card(surf)
         self._draw_log_card(surf, event_log)
 
     def _draw_status_card(self, surf: pygame.Surface, match: "MatchEngine") -> None:
@@ -259,3 +270,148 @@ class ReasoningPanelView:
         for col_key, msg in event_log[-5:]:
             Theme.blit_text(surf, theme.f_s, msg, col_key, (px, y))
             y += 22
+
+    def _draw_kb_reasoning_card(self, surf: pygame.Surface, match: "MatchEngine") -> None:
+        """Render the First-Order Logic (FOL) belief set B_t and sensor percepts card (y = 206..388)."""
+        theme = self.theme
+        card = pygame.Rect(PANEL_X, 206, PANEL_W, 182)
+        pygame.draw.rect(surf, COLORS["card"], card, border_radius=12)
+        pygame.draw.rect(surf, COLORS["line"], card, 1, border_radius=12)
+
+        px = card.x + 18
+        pw = card.w - 36
+        y = card.y + 12
+
+        Theme.blit_text(surf, theme.f_b, "1. PENALARAN FOL & BELIEF SET (B_t)", "accent", (px, y))
+        b_size = len(match.kb.belief)
+        in_b = match.player in match.kb.belief
+        Theme.blit_text(
+            surf,
+            theme.f_b,
+            f"|B_t| = {b_size} petak ({'Akurat' if in_b else 'Meleset'})",
+            "good" if in_b else "bad",
+            (px + pw, y),
+            "topright",
+        )
+        y += 25
+
+        p = match.percept
+        if p is None:
+            percept_str = "Sensor: Menunggu langkah pertama pemain..."
+        else:
+            step_s = f"({p.stepped[0]},{p.stepped[1]})" if p.stepped else "-"
+            noise_s = f"({p.noise[0]},{p.noise[1]})" if p.noise else "-"
+            seen_s = f"({p.seen[0]},{p.seen[1]})" if p.seen else "-"
+            percept_str = (
+                f"Pelat: {step_s}  •  Suara Pintu: {noise_s}  •  "
+                f"Terlihat: {seen_s} ({len(p.sight)} dipantau)"
+            )
+        Theme.blit_text(surf, theme.f_s, percept_str, "text", (px, y))
+        y += 22
+        pygame.draw.line(surf, COLORS["line"], (px, y), (px + pw, y), 1)
+        y += 7
+
+        if not match.kb.log:
+            Theme.blit_text(
+                surf,
+                theme.f_s,
+                "B_0 = {titik awal}. Melangkahlah untuk melihat inferensi aturan R1–R4.",
+                "dim",
+                (px, y),
+            )
+        else:
+            for inf in match.kb.log[:4]:
+                badge_col = "accent" if inf.before != inf.after else "dim"
+                Theme.blit_text(surf, theme.f_b, f"[{inf.rule}]", badge_col, (px, y))
+                Theme.blit_text(surf, theme.f_s, inf.text[:44], "text", (px + 46, y + 1))
+                Theme.blit_text(
+                    surf,
+                    theme.f_s,
+                    f"|B| {inf.before} → {inf.after}",
+                    "good" if inf.after < inf.before else "dim",
+                    (px + pw, y + 1),
+                    "topright",
+                )
+                y += 23
+
+    def _draw_minimax_card(self, surf: pygame.Surface, match: "MatchEngine") -> None:
+        """Render the A*, STRIPS, and 3-ply Minimax Alpha-Beta decision card (y = 396..588)."""
+        theme = self.theme
+        card = pygame.Rect(PANEL_X, 396, PANEL_W, 192)
+        pygame.draw.rect(surf, COLORS["card"], card, border_radius=12)
+        pygame.draw.rect(surf, COLORS["line"], card, 1, border_radius=12)
+
+        px = card.x + 18
+        pw = card.w - 36
+        y = card.y + 12
+
+        Theme.blit_text(surf, theme.f_b, "2. KEPUTUSAN MINIMAX + ALPHA-BETA", "accent", (px, y))
+        dec = match.decision
+        if dec is None:
+            Theme.blit_text(surf, theme.f_s, "Belum ada keputusan", "dim", (px + pw, y + 2), "topright")
+            Theme.blit_text(
+                surf,
+                theme.f_s,
+                "Warden akan mengevaluasi kandidat aksi STRIPS setelah kamu bergerak.",
+                "dim",
+                (px, y + 32),
+            )
+            return
+
+        act_str = StripsActionSchema.format_action(dec.action)
+        act_col = "bad" if dec.note.startswith("INVALID") else "good"
+        Theme.blit_text(surf, theme.f_b, f"Aksi: {act_str}", act_col, (px + pw, y), "topright")
+        y += 24
+
+        route_steps = len(dec.route) - 1 if dec.route else "?"
+        assumed_str = f"({dec.assumed[0]},{dec.assumed[1]})" if dec.assumed else "-"
+        val_str = f"{dec.value:.1f}" if dec.value is not None else "-"
+        meta_line = (
+            f"Asumsi: {assumed_str} (rute A*: {route_steps})  •  "
+            f"Skor: {val_str}  •  Nodes: {dec.nodes}  •  A* Exp: {dec.expanded}  •  {dec.ms:.1f} ms"
+        )
+        Theme.blit_text(surf, theme.f_s, meta_line, "dim", (px, y))
+        y += 22
+
+        if dec.scored:
+            vals = [v for _, v, _ in dec.scored]
+            lo, hi = min(vals), max(vals)
+            for action, val, exact in sorted(dec.scored, key=lambda item: -item[1])[:5]:
+                chosen = action == dec.action
+                ratio = 1.0 if hi == lo else (val - lo) / (hi - lo)
+                bx = px + 150
+                bw = pw - 150 - 62
+                pygame.draw.rect(surf, COLORS["bar"], (bx, y + 3, bw, 10), border_radius=5)
+                fill_w = max(4, int(bw * (0.15 + 0.85 * ratio)))
+                pygame.draw.rect(
+                    surf,
+                    COLORS["accent" if chosen else "line_hi"],
+                    (bx, y + 3, fill_w, 10),
+                    border_radius=5,
+                )
+                prefix = "> " if chosen else "  "
+                Theme.blit_text(
+                    surf,
+                    theme.f_s,
+                    prefix + StripsActionSchema.format_action(action),
+                    "accent" if chosen else "text",
+                    (px, y),
+                )
+                bound_prefix = "" if exact else "≤"
+                Theme.blit_text(
+                    surf,
+                    theme.f_s,
+                    f"{bound_prefix}{val:.1f}",
+                    "accent" if chosen else "dim",
+                    (px + pw, y),
+                    "topright",
+                )
+                y += 19
+            Theme.blit_text(
+                surf,
+                theme.f_s,
+                "Tanda ≤ : cabang dipangkas Alpha-Beta Pruning (batas atas)",
+                "faint",
+                (px, card.bottom - 20),
+            )
+

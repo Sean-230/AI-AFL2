@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from DungeonWarden.ai.player_bots import BOTS, BasePlayerBot
 from DungeonWarden.core.dungeon_map import DungeonMap
 from DungeonWarden.core.match_engine import MatchEngine
 from DungeonWarden.core.settings import SettingsManager
@@ -28,7 +27,6 @@ KEYMOVES: dict[int, str] = {
     pygame.K_d: "right",
     pygame.K_RIGHT: "right",
 }
-ACTIVE_WARDEN = "W2"
 
 
 class GameSession:
@@ -48,13 +46,10 @@ class GameSession:
             if getattr(app.args, key) is not None:
                 self.settings[key] = getattr(app.args, key)
 
-        self.match = MatchEngine(self.dmap, ACTIVE_WARDEN, seed=app.seed, **self.settings)
+        self.match = MatchEngine(self.dmap, seed=app.seed, **self.settings)
         app.seed += 1
-        self.bot: BasePlayerBot | None = (
-            BOTS[cfg["ctrl"]](app.seed) if cfg["ctrl"] != "human" else None
-        )
         self.reveal_sensors = True
-        self.paused_bot = False
+        self.show_belief = False
 
         self.board_view = BoardView(self.dmap, app.theme)
         self.panel_view = ReasoningPanelView(app.theme)
@@ -64,7 +59,6 @@ class GameSession:
         self.event_log: list[tuple[str, str]] = [
             ("dim", f"Peta {format_map_name(self.dmap.name)}: capai Harta Karun sebelum langkah habis!")
         ]
-        self.last_bot_ms = 0
         self.was_seen = False
         self.message: tuple[str, int] = ("", 0)
 
@@ -112,7 +106,7 @@ class GameSession:
             self.app.log_finished_game(
                 {
                     "time": datetime.now().isoformat(timespec="seconds"),
-                    "player": self.app.cfg["ctrl"],
+                    "player": "human",
                     "difficulty": self.app.cfg["difficulty"],
                     **m.summary(),
                 }
@@ -124,8 +118,12 @@ class GameSession:
         app = self.app
         if key == pygame.K_ESCAPE:
             app.overlay = "pause"
-        elif key in KEYMOVES and self.bot is None and not self.match.winner:
+        elif key in KEYMOVES and not self.match.winner:
             self.play_turn(KEYMOVES[key])
+        elif key == pygame.K_b:
+            self.show_belief = not self.show_belief
+        elif key == pygame.K_v:
+            self.reveal_sensors = not self.reveal_sensors
         elif key == pygame.K_r:
             app.execute_action("restart")
         elif key == pygame.K_n and self.match.winner:
@@ -148,16 +146,7 @@ class GameSession:
                     self.app.execute_action(btn.action)
 
     def update(self, now_ms: int) -> None:
-        """Advance bot moves (if CLI bot active) and interpolate player position animation."""
-        if (
-            self.bot
-            and not self.match.winner
-            and not self.paused_bot
-            and self.app.overlay is None
-            and now_ms - self.last_bot_ms >= self.app.delay
-        ):
-            self.play_turn(self.bot.move(self.match))
-            self.last_bot_ms = now_ms
+        """Interpolate the player's on-screen position animation."""
         progress = Theme.ease_out((now_ms - self.move_at) / MOVE_ANIM_MS)
         target_px = pygame.Vector2(self.board_view.cell_center(self.match.player))
         self.player_px = self.move_from.lerp(target_px, progress)
@@ -169,6 +158,7 @@ class GameSession:
             surf,
             self.match,
             self.app.cfg["difficulty"],
+            show_belief=self.show_belief,
         )
         self.board_view.draw(
             surf,
@@ -177,9 +167,16 @@ class GameSession:
             self.reveal_sensors,
             self.message,
             now_ms,
+            show_belief=self.show_belief,
         )
         tut_active = self.app.tutorial_view.active and not self.match.winner and self.app.overlay is None
-        self.panel_view.draw_panel(surf, self.match, self.event_log, tutorial_active=tut_active)
+        self.panel_view.draw_panel(
+            surf,
+            self.match,
+            self.event_log,
+            tutorial_active=tut_active,
+            show_belief=self.show_belief,
+        )
         if tut_active:
             self.app.tutorial_view.draw(surf, now_ms)
         if self.match.winner and self.app.overlay is None:

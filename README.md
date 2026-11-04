@@ -20,12 +20,11 @@ AI-AFL2/
 │   │   ├── sensor_system.py      # SensorSystem (plates, door noise, 2-cell sight)
 │   │   ├── map_generator.py      # MapGenerator & RouteAnalyzer (max-flow disjoint routes)
 │   │   └── match_engine.py       # MatchEngine (turn loop, ground-truth validation, metrics)
-│   ├── ai/                       # AGENT LAYER: FOL Reasoning, Search, Minimax, & Bots
+│   ├── ai/                       # AGENT LAYER: FOL Reasoning, Search, & the game's Minimax Warden (W2)
 │   │   ├── pathfinder.py         # Pathfinder (A* & BFS) and RouteCache
 │   │   ├── knowledge_base.py     # KnowledgeBase (FOL rules R1-R4) & ActionValidator (Valid(a))
 │   │   ├── warden_base.py        # Abstract BaseWarden (ABC) & Decision telemetry
-│   │   ├── wardens.py            # RandomWarden (W0), GreedyWarden (W1), MinimaxWarden (W2), OracleWarden (W3)
-│   │   └── player_bots.py        # Abstract BasePlayerBot (ABC), RusherBot, & CautiousBot
+│   │   └── wardens.py            # MinimaxWarden (W2, Full Warden): the only Warden the game plays
 │   ├── ui/                       # PRESENTATION LAYER: Modular Pygame UI
 │   │   ├── theme.py              # Theme, color palette, typography, & easing helpers
 │   │   ├── components.py         # Reusable Button UI widget
@@ -45,9 +44,13 @@ AI-AFL2/
     ├── metrics.py                # MetricsAggregator & ReportWriter (statistics, CSV, console tables)
     ├── plotter.py                # ExperimentPlotter (Matplotlib chart generation)
     ├── calibrate.py              # DifficultyCalibrator (turn limit T per map, checks the cost-based difficulties)
-    ├── test_core.py              # Unit test suite (20 tests verifying Core & AI classes)
+    ├── evaluation_wardens.py     # RandomWarden (W0), GreedyWarden (W1), OracleWarden (W3) + WARDENS registry (subclasses of BaseWarden)
+    ├── player_bots.py            # Abstract BasePlayerBot (ABC), RusherBot, & CautiousBot (simulated players)
+    ├── test_core.py              # Unit test suite (24 tests verifying Core, AI & architecture rules)
     └── results/                  # CSV metrics and PNG charts (20x20-hard/, scaling/)
 ```
+
+The game always plays the **Full Warden (W2)** against a human. The simulated players (`RusherBot`, `CautiousBot`) and the comparison Wardens (W0, W1, W3) are only tools to evaluate the method, so they live in `Experiments/` and subclass the game's `BaseWarden`. `Experiments/` depends on `DungeonWarden/`, never the other way round (a unit test checks this).
 
 ## Setup
 
@@ -67,7 +70,6 @@ Command-line options skip the menu or set the proposal's input settings (`T`, `e
 
 ```bash
 python DungeonWarden/main.py --skip-menu --map fortress --difficulty hard
-python DungeonWarden/main.py --skip-menu --bot rusher
 python DungeonWarden/main.py --T 90 --energy 6 --cap 10 --lock-cost 2 --wall-cost 3 --seed 7
 ```
 

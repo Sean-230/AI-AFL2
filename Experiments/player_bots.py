@@ -1,4 +1,4 @@
-"""Simulated player bot hierarchy (Proposal Section 2.2): Rusher and Cautious."""
+"""Simulated player bot hierarchy used only to evaluate the Warden (Proposal Section 2.2): Rusher and Cautious."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

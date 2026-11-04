@@ -16,8 +16,6 @@ if str(ROOT) not in sys.path:
 
 from DungeonWarden.ai.knowledge_base import FOL_RULES, ActionValidator, KnowledgeBase  # noqa: E402
 from DungeonWarden.ai.pathfinder import Pathfinder  # noqa: E402
-from DungeonWarden.ai.player_bots import BOTS  # noqa: E402
-from DungeonWarden.ai.wardens import WARDENS  # noqa: E402
 from DungeonWarden.core.action_schema import StripsActionSchema  # noqa: E402
 from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
 from DungeonWarden.core.game_state import GameState  # noqa: E402
@@ -25,13 +23,15 @@ from DungeonWarden.core.map_generator import MapGenerator, RouteAnalyzer  # noqa
 from DungeonWarden.core.match_engine import MatchEngine  # noqa: E402
 from DungeonWarden.core.sensor_system import SensorSystem  # noqa: E402
 from DungeonWarden.core.settings import DIFFICULTIES, SettingsManager  # noqa: E402
+from Experiments.evaluation_wardens import WARDENS  # noqa: E402
+from Experiments.player_bots import BOTS  # noqa: E402
 
 MAPS = [DungeonMap.load(p) for p in SettingsManager.map_paths()]
 
 
 def play_out(dmap: DungeonMap, warden: str, bot: str, seed: int, **kwargs) -> MatchEngine:
     """Helper to run a complete headless match to completion."""
-    match = MatchEngine(dmap, warden, seed=seed, check_astar=True, **kwargs)
+    match = MatchEngine(dmap, WARDENS[warden], seed=seed, check_astar=True, **kwargs)
     bot_agent = BOTS[bot](seed)
     while not match.winner:
         match.step(bot_agent.move(match))
@@ -210,7 +210,7 @@ class ProposalRulesTests(unittest.TestCase):
 
     def test_turn_limit(self) -> None:
         self.assertEqual(MatchEngine(self.m).T, 120)
-        g = MatchEngine(self.m, "W0", T=3)
+        g = MatchEngine(self.m, WARDENS["W0"], T=3)
         self.assertFalse(g.step("wait"))
         for _ in range(3):
             self.assertTrue(g.step(g.legal_moves()[0][0]))
@@ -279,6 +279,24 @@ class GameTests(unittest.TestCase):
         self.assertEqual((game.state.lock_cost, game.state.wall_cost), (cfg["lock_cost"], cfg["wall_cost"]))
         self.assertEqual(game.invalid, 0)
         self.assertTrue(all(r.true_in_belief for r in game.records))
+
+
+class ArchitectureTests(unittest.TestCase):
+    """The game ships only W2; bots and comparison Wardens belong to the evaluation suite."""
+
+    def test_game_package_does_not_contain_evaluation_code(self) -> None:
+        forbidden = ("Experiments", "RandomWarden", "GreedyWarden", "OracleWarden", "RusherBot", "CautiousBot")
+        for path in (ROOT / "DungeonWarden").rglob("*.py"):
+            code = path.read_text(encoding="utf-8")
+            for name in forbidden:
+                if path.name == "wardens.py" and name == "Experiments":
+                    continue   # only mentioned in the module docstring
+                self.assertNotIn(name, code, f"{path.relative_to(ROOT)} mentions {name}")
+
+    def test_default_warden_is_the_full_warden(self) -> None:
+        self.assertEqual(MatchEngine(MAPS[0]).warden.key, "W2")
+        self.assertIs(WARDENS["W2"], type(MatchEngine(MAPS[0]).warden))
+        self.assertEqual(set(WARDENS), {"W0", "W1", "W2", "W3"})
 
 
 if __name__ == "__main__":

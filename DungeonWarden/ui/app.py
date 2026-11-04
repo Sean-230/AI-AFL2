@@ -8,7 +8,6 @@ import sys
 
 import pygame
 
-from DungeonWarden.ai.player_bots import BOTS
 from DungeonWarden.core.dungeon_map import DungeonMap
 from DungeonWarden.core.match_engine import MatchEngine
 from DungeonWarden.core.settings import DIFFICULTIES, LOGS_DIR, SettingsManager
@@ -32,7 +31,6 @@ class DungeonWardenApp:
         self.clock = pygame.time.Clock()
         self.theme = Theme()
         self.seed: int = args.seed
-        self.delay: int = args.delay
         self.overlay: str | None = None
 
         map_name = Path(args.map).stem if args.map else None
@@ -40,7 +38,6 @@ class DungeonWardenApp:
         self.cfg: dict[str, str] = {
             "map": map_name or default_map,
             "difficulty": args.difficulty,
-            "ctrl": args.bot or "human",
         }
 
         self.menu_view = MenuView(self)
@@ -208,14 +205,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dungeon Warden (20x20)")
     parser.add_argument("--map", help="map file or name, e.g. fortress or DungeonWarden/maps/fortress.txt")
     parser.add_argument("--difficulty", default="normal", choices=list(DIFFICULTIES))
-    parser.add_argument("--bot", choices=sorted(BOTS), help="let a bot play instead of you")
     parser.add_argument("--T", type=int, help="override the turn limit T")
     parser.add_argument("--energy", type=int, help="override the Warden's starting energy")
     parser.add_argument("--cap", type=int, help="override the Warden's energy cap")
     parser.add_argument("--lock-cost", type=int, help="override the energy cost of LockDoor")
     parser.add_argument("--wall-cost", type=int, help="override the energy cost of PlaceWall")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--delay", type=int, default=300, help="ms between bot moves")
     parser.add_argument("--skip-menu", action="store_true", help="start the game straight away")
     parser.add_argument("--tutorial", action="store_true", help="open the interactive tutorial straight away")
     return parser.parse_args(argv)
