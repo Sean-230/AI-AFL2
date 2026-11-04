@@ -1,29 +1,18 @@
-"""Simulated player bot hierarchy used only to evaluate the Warden (Proposal Section 2.2): Rusher and Cautious."""
+"""Concrete simulated players used only to evaluate the Warden (Proposal Section 2.2): Rusher and Cautious.
+
+Both subclass the game's abstract BasePlayerBot (DungeonWarden/ai/player_base.py).
+"""
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-import random
 from typing import TYPE_CHECKING
 
 from DungeonWarden.ai.pathfinder import Pathfinder
+from DungeonWarden.ai.player_base import BasePlayerBot
 
 if TYPE_CHECKING:
     from DungeonWarden.core.match_engine import MatchEngine
 
 DOOR_PENALTY_COST = 4
-
-
-class BasePlayerBot(ABC):
-    """Abstract base class for simulated player agents."""
-
-    name: str = "Bot"
-
-    def __init__(self, seed: int = 0) -> None:
-        self.rng = random.Random(seed)
-
-    @abstractmethod
-    def move(self, match: "MatchEngine") -> str:
-        """Select a legal movement direction ('up', 'down', 'left', 'right') for the current turn."""
 
 
 class RusherBot(BasePlayerBot):

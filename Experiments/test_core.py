@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from DungeonWarden.ai.knowledge_base import FOL_RULES, ActionValidator, KnowledgeBase  # noqa: E402
 from DungeonWarden.ai.pathfinder import Pathfinder  # noqa: E402
+from DungeonWarden.ai.warden_base import BaseWarden  # noqa: E402
 from DungeonWarden.core.action_schema import StripsActionSchema  # noqa: E402
 from DungeonWarden.core.dungeon_map import DungeonMap  # noqa: E402
 from DungeonWarden.core.game_state import GameState  # noqa: E402
@@ -285,13 +286,20 @@ class ArchitectureTests(unittest.TestCase):
     """The game ships only W2; bots and comparison Wardens belong to the evaluation suite."""
 
     def test_game_package_does_not_contain_evaluation_code(self) -> None:
-        forbidden = ("Experiments", "RandomWarden", "GreedyWarden", "OracleWarden", "RusherBot", "CautiousBot")
+        """The game never imports Experiments and defines no concrete bot or comparison Warden."""
+        import re
+        concrete = ("RandomWarden", "GreedyWarden", "OracleWarden", "RusherBot", "CautiousBot")
         for path in (ROOT / "DungeonWarden").rglob("*.py"):
             code = path.read_text(encoding="utf-8")
-            for name in forbidden:
-                if path.name == "wardens.py" and name == "Experiments":
-                    continue   # only mentioned in the module docstring
-                self.assertNotIn(name, code, f"{path.relative_to(ROOT)} mentions {name}")
+            where = str(path.relative_to(ROOT))
+            self.assertIsNone(re.search(r"^\s*(from|import)\s+Experiments", code, re.M), f"{where} imports Experiments")
+            for name in concrete:
+                self.assertIsNone(re.search(rf"class\s+{name}\b", code), f"{where} defines {name}")
+
+    def test_bots_subclass_the_games_abstract_player(self) -> None:
+        from DungeonWarden.ai.player_base import BasePlayerBot
+        self.assertTrue(all(issubclass(bot, BasePlayerBot) for bot in BOTS.values()))
+        self.assertTrue(all(issubclass(w, BaseWarden) for w in WARDENS.values()))
 
     def test_default_warden_is_the_full_warden(self) -> None:
         self.assertEqual(MatchEngine(MAPS[0]).warden.key, "W2")

@@ -24,6 +24,7 @@ AI-AFL2/
 │   │   ├── pathfinder.py         # Pathfinder (A* & BFS) and RouteCache
 │   │   ├── knowledge_base.py     # KnowledgeBase (FOL rules R1-R4) & ActionValidator (Valid(a))
 │   │   ├── warden_base.py        # Abstract BaseWarden (ABC) & Decision telemetry
+│   │   ├── player_base.py        # Abstract BasePlayerBot (ABC): the interface every simulated player implements
 │   │   └── wardens.py            # MinimaxWarden (W2, Full Warden): the only Warden the game plays
 │   ├── ui/                       # PRESENTATION LAYER: Modular Pygame UI
 │   │   ├── theme.py              # Theme, color palette, typography, & easing helpers
@@ -45,12 +46,12 @@ AI-AFL2/
     ├── plotter.py                # ExperimentPlotter (Matplotlib chart generation)
     ├── calibrate.py              # DifficultyCalibrator (turn limit T per map, checks the cost-based difficulties)
     ├── evaluation_wardens.py     # RandomWarden (W0), GreedyWarden (W1), OracleWarden (W3) + WARDENS registry (subclasses of BaseWarden)
-    ├── player_bots.py            # Abstract BasePlayerBot (ABC), RusherBot, & CautiousBot (simulated players)
+    ├── player_bots.py            # RusherBot & CautiousBot (concrete simulated players, subclass BasePlayerBot)
     ├── test_core.py              # Unit test suite (24 tests verifying Core, AI & architecture rules)
     └── results/                  # CSV metrics and PNG charts (20x20-hard/, scaling/)
 ```
 
-The game always plays the **Full Warden (W2)** against a human. The simulated players (`RusherBot`, `CautiousBot`) and the comparison Wardens (W0, W1, W3) are only tools to evaluate the method, so they live in `Experiments/` and subclass the game's `BaseWarden`. `Experiments/` depends on `DungeonWarden/`, never the other way round (a unit test checks this).
+The game always plays the **Full Warden (W2)** against a human. The simulated players (`RusherBot`, `CautiousBot`) and the comparison Wardens (W0, W1, W3) are only tools to evaluate the method, so the concrete classes live in `Experiments/` and subclass the game's abstract `BaseWarden` and `BasePlayerBot`. `Experiments/` depends on `DungeonWarden/`, never the other way round (a unit test checks this).
 
 ## Setup
 
